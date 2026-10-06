@@ -88,6 +88,20 @@ app.use('/api/registrations', registrationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Root Endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    service: 'Free Fire Arena API Backend',
+    endpoints: {
+      health: '/api/health',
+      tournaments: '/api/tournaments',
+      registrations: '/api/registrations',
+      admin: '/api/admin',
+    },
+  });
+});
+
 // 404 Route Handler
 app.use('/api/*', (req, res) => {
   res.status(404).json({

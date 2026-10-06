@@ -4,6 +4,7 @@
   "description": "Free Fire BR Tournament Registration System Backend",
   "main": "src/server.js",
   "scripts": {
+    "build": "echo Backend build ready",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:setup": "node src/database/migrate.js",
