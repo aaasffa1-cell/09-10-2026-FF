@@ -9,7 +9,7 @@ This guide walks you step-by-step through deploying your **Free Fire Arena** ful
 - **Frontend:** React + Vite SPA deployed on Vercel's Edge Network / CDN.
 - **Backend:** Express API running seamlessly as a Vercel Serverless Function (`/api/*`).
 - **Database:** Managed Cloud PostgreSQL (e.g., [Neon.tech](https://neon.tech) or [Supabase](https://supabase.com) - both offer generous free tiers).
-- **Match Scheduler:** Automated room credentials email runner triggered every minute via Vercel Cron (`/api/cron/check-rooms`).
+- **Match Scheduler:** Free tier friendly &mdash; trigger room credentials via Admin Panel or free external cron pinger (e.g., [cron-job.org](https://cron-job.org)) hitting `/api/cron/check-rooms`.
 
 ---
 
@@ -144,14 +144,14 @@ Once deployed, test the following key flows on your live `https://your-project.v
 4. **Admin Panel (`/admin`):**
    - Log in with `admin@freefirearena.com` / `admin123456`.
    - Test creating a tournament, saving custom room credentials (Room ID + Password), and viewing confirmed squads.
-5. **Automated Pre-Match Room Credentials:**
-   - Vercel Cron will trigger `/api/cron/check-rooms` automatically every minute to dispatch Room IDs and passwords 10 minutes prior to match start.
+5. **Room Credentials Dispatch:**
+   - On the Vercel free tier, automated room credentials dispatch can be triggered manually from the Admin dashboard or by setting up a 100% free external cron pinger (e.g., [cron-job.org](https://cron-job.org)) pointing to `https://your-project.vercel.app/api/cron/check-rooms`.
 
 ---
 
 ## 🛠️ Summary of Created / Configured Files
 
-- [`vercel.json`](file:///c:/Users/bhara/OneDrive/Desktop/newarena/vercel.json) &mdash; Root Vercel configuration for SPA rewrites, serverless function routing, and cron trigger.
+- [`vercel.json`](file:///c:/Users/bhara/OneDrive/Desktop/newarena/vercel.json) &mdash; Root Vercel configuration for SPA rewrites and serverless function routing (Free tier optimized without Vercel crons).
 - [`api/index.js`](file:///c:/Users/bhara/OneDrive/Desktop/newarena/api/index.js) &mdash; Serverless adapter connecting Vercel requests to Express and database pool.
 - [`frontend/vercel.json`](file:///c:/Users/bhara/OneDrive/Desktop/newarena/frontend/vercel.json) &mdash; Direct SPA rewrite rules for standalone frontend deployments.
 - [`package.json`](file:///c:/Users/bhara/OneDrive/Desktop/newarena/package.json) &mdash; Monorepo scripts for builds, database setup, and dependencies.
