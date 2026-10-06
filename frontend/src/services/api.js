@@ -1,6 +1,25 @@
-// Dynamic API Base URL supporting Vercel Serverless or remote Backend URL
-const rawApiBase = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '/api';
-const API_BASE = rawApiBase.endsWith('/') ? rawApiBase.slice(0, -1) : rawApiBase;
+// Dynamic API Base URL supporting custom Vercel backend deployment
+const DEPLOYED_BACKEND_URL = 'https://aaasffa1-j9um8q5g0-bharathnaidu050-1211s-projects.vercel.app/api';
+
+let rawApiBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').trim();
+
+if (!rawApiBase) {
+  // If running locally in development, default to /api (Vite dev proxy)
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    rawApiBase = '/api';
+  } else {
+    rawApiBase = DEPLOYED_BACKEND_URL;
+  }
+} else {
+  if (rawApiBase.endsWith('/')) {
+    rawApiBase = rawApiBase.slice(0, -1);
+  }
+  if (!rawApiBase.endsWith('/api') && !rawApiBase.includes('/api/')) {
+    rawApiBase = `${rawApiBase}/api`;
+  }
+}
+
+const API_BASE = rawApiBase;
 
 // Helper for HTTP requests
 async function request(endpoint, options = {}) {
