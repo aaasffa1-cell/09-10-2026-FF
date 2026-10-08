@@ -14,10 +14,6 @@ import {
   X, 
   AlertCircle, 
   CheckCircle2, 
-  Clock, 
-  Calendar, 
-  Trophy,
-  Users
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -38,7 +34,7 @@ export default function AdminTournaments() {
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('08:00 PM');
   const [entryFee, setEntryFee] = useState(40);
-  const [prizeAmount, setPrizeAmount] = useState(1000);
+  const [prizeAmount, setPrizeAmount] = useState(300);
   const [squadSize, setSquadSize] = useState(4);
   const [maxSlots, setMaxSlots] = useState(25);
   const [rules, setRules] = useState('');
@@ -66,7 +62,7 @@ export default function AdminTournaments() {
     setDate(tomorrow);
     setStartTime('08:00 PM');
     setEntryFee(40);
-    setPrizeAmount(1000);
+    setPrizeAmount(300);
     setSquadSize(4);
     setMaxSlots(25);
     setRules('1. Exactly 4 players per squad.\n2. Mobile devices only (No Emulators/iPads).\n3. Gun attributes disabled.\n4. Room ID & Password sent 10 minutes prior to match.');
@@ -82,7 +78,7 @@ export default function AdminTournaments() {
     const formattedDate = new Date(t.date).toISOString().split('T')[0];
     setDate(formattedDate);
     setStartTime(t.startTime);
-    setEntryFee(t.entryFee);
+    setEntryFee(40);
     setPrizeAmount(t.prizeAmount);
     setSquadSize(t.squadSize);
     setMaxSlots(t.maxSlots);
@@ -235,7 +231,7 @@ export default function AdminTournaments() {
 
                     <td style={{ padding: '16px 15px', fontSize: '13px' }}>
                       <div style={{ color: 'var(--accent-green)', fontWeight: 700 }}>₹{t.entryFee}</div>
-                      <div style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>Pool: ₹{t.prizeAmount}</div>
+                      <div style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>Winner Prize: ₹{t.prizeAmount}</div>
                     </td>
 
                     <td style={{ padding: '16px 15px' }}>
@@ -379,19 +375,18 @@ export default function AdminTournaments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px' }}>
                   <div className="form-group">
-                    <label className="form-label">Entry Fee (₹) *</label>
+                    <label className="form-label">Team Entry Fee (Fixed at ₹40)</label>
                     <input
                       type="number"
                       required
-                      min="0"
                       className="form-input"
-                      value={entryFee}
-                      onChange={(e) => setEntryFee(e.target.value)}
+                      value={40}
+                      disabled
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Prize Pool (₹) *</label>
+                    <label className="form-label">Winner Prize (₹) *</label>
                     <input
                       type="number"
                       required

@@ -48,9 +48,57 @@ const adminLoginLimiter = rateLimit({
   },
 });
 
+const contactMessageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many messages sent. Please try again later.',
+  },
+});
+
+const paymentOrderLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many payment attempts. Please wait before trying again.',
+  },
+});
+
+const paymentStatusLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many payment status checks. Please try again shortly.',
+  },
+});
+
+const paymentUtrLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many UTR submissions. Please wait before trying again.',
+  },
+});
+
 module.exports = {
   generalLimiter,
   otpRequestLimiter,
   otpVerifyLimiter,
   adminLoginLimiter,
+  contactMessageLimiter,
+  paymentOrderLimiter,
+  paymentStatusLimiter,
+  paymentUtrLimiter,
 };

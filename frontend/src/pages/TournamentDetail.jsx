@@ -52,11 +52,6 @@ export default function TournamentDetail() {
   const isFull = tournament.status === 'SLOTS_FULL';
   const isClosed = tournament.status === 'REGISTRATION_CLOSED';
 
-  // Prize calculation breakdown (Standard Esports Split: 60% 1st, 30% 2nd, 10% 3rd)
-  const firstPrize = Math.round(tournament.prizeAmount * 0.6);
-  const secondPrize = Math.round(tournament.prizeAmount * 0.3);
-  const thirdPrize = Math.round(tournament.prizeAmount * 0.1);
-
   return (
     <div style={{ padding: '40px 0 80px' }}>
       <div className="container">
@@ -242,24 +237,15 @@ export default function TournamentDetail() {
                 </div>
               </div>
 
-              {/* Prize Breakdown */}
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '10px' }}>
-                  Prize Distribution Breakdown (₹{tournament.prizeAmount})
+              <div style={{ marginBottom: '24px', background: 'rgba(255, 183, 0, 0.08)', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(255, 183, 0, 0.2)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--accent-gold)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Winner Prize
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(255, 183, 0, 0.08)', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255, 183, 0, 0.2)' }}>
-                    <span style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>🏆 1st Place (Winner)</span>
-                    <strong style={{ color: '#ffffff' }}>₹{firstPrize}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', background: '#10131f', padding: '8px 12px', borderRadius: '6px', border: '1px solid #1f2338' }}>
-                    <span style={{ color: '#cccccc' }}>🥈 2nd Place</span>
-                    <strong style={{ color: '#ffffff' }}>₹{secondPrize}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', background: '#10131f', padding: '8px 12px', borderRadius: '6px', border: '1px solid #1f2338' }}>
-                    <span style={{ color: '#cccccc' }}>🥉 3rd Place</span>
-                    <strong style={{ color: '#ffffff' }}>₹{thirdPrize}</strong>
-                  </div>
+                <div style={{ fontSize: '24px', color: '#ffffff', fontWeight: 900, marginTop: '4px' }}>
+                  ₹{tournament.prizeAmount}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                  Paid separately by the tournament organizer; it is not funded from team registration fees.
                 </div>
               </div>
 

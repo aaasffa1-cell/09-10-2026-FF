@@ -9,6 +9,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "db:setup": "node backend/src/database/migrate.js",
+    "db:status": "node backend/src/database/migrationStatus.js",
     "start": "node backend/src/server.js"
   },
   "dependencies": {
@@ -23,7 +24,6 @@
     "nodemailer": "^6.10.0",
     "pg": "^8.13.1",
     "pg-mem": "^3.0.4",
-    "razorpay": "^2.9.5",
     "validator": "^13.12.0"
   }
 }

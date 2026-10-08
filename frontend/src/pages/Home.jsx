@@ -191,7 +191,7 @@ export default function Home() {
               {
                 step: '03',
                 title: 'VERIFY OTP & PAY ₹40',
-                desc: 'Verify captain email with a secure 6-digit OTP, then complete ₹40 entry payment via Razorpay.',
+                desc: 'Verify captain email with a secure 6-digit OTP, then complete the ₹40 team registration payment.',
                 icon: ShieldCheck,
               },
               {
@@ -334,7 +334,7 @@ export default function Home() {
                         </div>
 
                         <div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Prize Pool</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Organizer-funded Winner Prize</div>
                           <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--accent-gold)' }}>
                             ₹{t.prizeAmount}
                           </div>

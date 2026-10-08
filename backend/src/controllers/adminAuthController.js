@@ -1,6 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../database/db');
+const { getSessionSecret } = require('../middleware/authMiddleware');
+
+const ADMIN_COOKIE_NAME = 'ffa_admin_token';
+const ADMIN_SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
 
 // POST /api/admin/login
 async function login(req, res) {
@@ -36,21 +40,26 @@ async function login(req, res) {
       });
     }
 
-    const secret = process.env.SESSION_SECRET || 'freefire_arena_default_secret_key';
     const token = jwt.sign(
       {
         id: admin.id,
         email: admin.email,
         role: 'admin',
       },
-      secret,
+      getSessionSecret(),
       { expiresIn: '24h' }
     );
+    res.cookie(ADMIN_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: ADMIN_SESSION_MAX_AGE,
+      path: '/api/admin',
+    });
 
     return res.json({
       success: true,
       message: 'Admin login successful.',
-      token,
       admin: {
         id: admin.id,
         email: admin.email,
@@ -67,6 +76,12 @@ async function login(req, res) {
 
 // POST /api/admin/logout
 async function logout(req, res) {
+  res.clearCookie(ADMIN_COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/admin',
+  });
   return res.json({
     success: true,
     message: 'Logged out successfully.',

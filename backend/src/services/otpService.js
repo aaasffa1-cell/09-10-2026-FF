@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { randomInt } = require('crypto');
 const { query } = require('../database/db');
 
 const OTP_EXPIRY_MINUTES = 10;
@@ -6,7 +7,7 @@ const MAX_VERIFICATION_ATTEMPTS = 5;
 
 // Generate secure 6-digit numeric OTP
 function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return String(randomInt(100000, 1000000));
 }
 
 // Hash OTP with bcrypt (10 rounds)

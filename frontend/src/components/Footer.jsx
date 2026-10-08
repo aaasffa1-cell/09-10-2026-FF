@@ -43,7 +43,7 @@ export default function Footer() {
               </span>
             </div>
             <p style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-dim)', marginBottom: '15px' }}>
-              The premier Battle Royale esports tournament platform. Compete with your 4-player squad, enter with ₹40, and win real cash prize pools.
+              The premier Battle Royale esports tournament platform. Compete with your 4-player squad for a ₹40 registration fee and an organizer-funded winner prize.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--accent-cyan)' }}>
               <ShieldCheck size={16} /> 100% Anti-Cheat & Fair Play Verified

@@ -1,15 +1,7 @@
-// Dynamic API Base URL supporting custom Vercel backend deployment
-const DEPLOYED_BACKEND_URL = 'https://aaasffa1-j9um8q5g0-bharathnaidu050-1211s-projects.vercel.app/api';
-
 let rawApiBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').trim();
 
 if (!rawApiBase) {
-  // If running locally in development, default to /api (Vite dev proxy)
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    rawApiBase = '/api';
-  } else {
-    rawApiBase = DEPLOYED_BACKEND_URL;
-  }
+  rawApiBase = '/api';
 } else {
   if (rawApiBase.endsWith('/')) {
     rawApiBase = rawApiBase.slice(0, -1);
@@ -31,15 +23,10 @@ async function request(endpoint, options = {}) {
     ...(options.headers || {}),
   };
 
-  // Attach Admin Token if available
-  const adminToken = localStorage.getItem('ffa_admin_token');
-  if (adminToken && !headers['Authorization']) {
-    headers['Authorization'] = `Bearer ${adminToken}`;
-  }
-
   const response = await fetch(url, {
     ...options,
     headers,
+    credentials: 'include',
   });
 
   const data = await response.json().catch(() => ({}));
@@ -73,33 +60,52 @@ export async function submitSquadRegistration(payload) {
   });
 }
 
-export async function resendOtp(registrationId) {
+export async function resendOtp(registrationId, registrationToken) {
   return request(`/registrations/${registrationId}/send-otp`, {
     method: 'POST',
+    headers: { 'X-Registration-Token': registrationToken },
   });
 }
 
-export async function verifyOtp(registrationId, otp) {
+export async function verifyOtp(registrationId, otp, registrationToken) {
   return request(`/registrations/${registrationId}/verify-otp`, {
     method: 'POST',
     body: JSON.stringify({ otp }),
+    headers: { 'X-Registration-Token': registrationToken },
   });
 }
 
-export async function getRegistrationStatus(registrationId) {
-  const data = await request(`/registrations/${registrationId}/status`);
+export async function getRegistrationStatus(registrationId, registrationToken) {
+  const data = await request(`/registrations/${registrationId}/status`, {
+    headers: { 'X-Registration-Token': registrationToken },
+  });
   return data.registration;
 }
 
-export async function createPaymentOrder(registrationId) {
-  return request('/payments/create-order', {
+export async function startPaymentRequest(registrationId, registrationToken) {
+  return request(`/payments/registrations/${registrationId}/start`, {
     method: 'POST',
-    body: JSON.stringify({ registrationId }),
+    headers: { 'X-Registration-Token': registrationToken },
   });
 }
 
-export async function verifyPayment(payload) {
-  return request('/payments/verify', {
+export async function submitRegistrationUtr(registrationId, utr, registrationToken) {
+  return request(`/payments/registrations/${registrationId}/utr`, {
+    method: 'POST',
+    body: JSON.stringify({ utr }),
+    headers: { 'X-Registration-Token': registrationToken },
+  });
+}
+
+export async function getRegistrationPaymentStatus(registrationId, registrationToken) {
+  const data = await request(`/payments/registrations/${registrationId}/status`, {
+    headers: { 'X-Registration-Token': registrationToken },
+  });
+  return data.payment;
+}
+
+export async function submitContactMessage(payload) {
+  return request('/contact', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -111,23 +117,21 @@ export async function adminLogin(email, password) {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  if (data.token) {
-    localStorage.setItem('ffa_admin_token', data.token);
-    localStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
+  if (data.admin) {
+    sessionStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
   }
   return data;
 }
 
 export function adminLogout() {
-  localStorage.removeItem('ffa_admin_token');
-  localStorage.removeItem('ffa_admin_user');
-  return request('/admin/logout', { method: 'POST' }).catch(() => {});
+  return request('/admin/logout', { method: 'POST' }).finally(() => {
+    sessionStorage.removeItem('ffa_admin_user');
+  });
 }
 
 export function getStoredAdmin() {
-  const token = localStorage.getItem('ffa_admin_token');
-  const userStr = localStorage.getItem('ffa_admin_user');
-  if (!token || !userStr) return null;
+  const userStr = sessionStorage.getItem('ffa_admin_user');
+  if (!userStr) return null;
   try {
     return JSON.parse(userStr);
   } catch {
@@ -180,6 +184,31 @@ export async function fetchAdminRegistrations(filters = {}) {
   const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
   const data = await request(`/admin/registrations${queryStr}`);
   return data.registrations || [];
+}
+
+export async function fetchAdminPaymentEvents(paymentId) {
+  const data = await request(`/admin/payments/${paymentId}/events`);
+  return data.events || [];
+}
+
+export async function fetchAdminPayments(filters = {}) {
+  const queryParams = new URLSearchParams();
+  if (filters.status) queryParams.append('status', filters.status);
+  if (filters.search) queryParams.append('search', filters.search);
+  if (filters.sort) queryParams.append('sort', filters.sort);
+  const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+  return request(`/admin/payments${queryString}`);
+}
+
+export async function verifyAdminPayment(paymentId) {
+  return request(`/admin/payments/${paymentId}/verify`, { method: 'POST' });
+}
+
+export async function rejectAdminPayment(paymentId, reason) {
+  return request(`/admin/payments/${paymentId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export async function fetchRoomCredentials(tournamentId) {

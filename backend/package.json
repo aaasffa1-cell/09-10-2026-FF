@@ -8,7 +8,10 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:setup": "node src/database/migrate.js",
-    "db:seed": "node src/database/seed.js"
+    "db:status": "node src/database/migrationStatus.js",
+    "db:seed": "node src/database/seed.js",
+    "email:verify": "node src/test/emailConnectionTest.js",
+    "test:payments": "node --test src/test/paymentServiceTest.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -22,7 +25,6 @@
     "nodemailer": "^6.10.0",
     "pg": "^8.13.1",
     "pg-mem": "^3.0.4",
-    "razorpay": "^2.9.5",
     "validator": "^13.12.0"
   },
   "type": "commonjs"

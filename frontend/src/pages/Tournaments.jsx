@@ -219,7 +219,7 @@ export default function Tournaments() {
 
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                          <Trophy size={13} color="var(--accent-gold)" /> Prize Pool
+                          <Trophy size={13} color="var(--accent-gold)" /> Winner Prize
                         </div>
                         <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--accent-gold)' }}>
                           ₹{t.prizeAmount}

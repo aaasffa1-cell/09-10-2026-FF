@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, PhoneCall, MessageSquare, Send, CheckCircle2, Headphones, HelpCircle } from 'lucide-react';
+import { submitContactMessage } from '../services/api';
 
 export default function Contact() {
   const [name, setName] = useState('');
@@ -7,14 +8,26 @@ export default function Contact() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSent(true);
-    setName('');
-    setEmail('');
-    setSubject('');
-    setMessage('');
+    setSending(true);
+    setSent(false);
+    setErrorMessage('');
+    try {
+      await submitContactMessage({ name, email, subject, message });
+      setSent(true);
+      setName('');
+      setEmail('');
+      setSubject('');
+      setMessage('');
+    } catch (error) {
+      setErrorMessage(error.message || 'We could not send your message. Please try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -132,10 +145,10 @@ export default function Contact() {
 
             <div>
               <h4 style={{ color: 'var(--accent-orange)', fontSize: '15px', marginBottom: '6px' }}>
-                How is the tournament prize pool distributed?
+                How is the winner prize funded?
               </h4>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6' }}>
-                Prize money is sent via instant UPI (Google Pay, PhonePe, Paytm, BHIM) to the winning squad captain within 30 minutes following final match screenshot verification.
+                The winner prize displayed for a tournament is funded and paid separately by the tournament organizer. Team registration fees are not pooled or used to fund prizes.
               </p>
             </div>
 
@@ -164,6 +177,12 @@ export default function Contact() {
             </div>
           )}
 
+          {errorMessage && (
+            <div className="alert alert-error">
+              {errorMessage}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
               <div className="form-group">
@@ -171,6 +190,7 @@ export default function Contact() {
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   className="form-input"
                   placeholder="e.g. Rahul Sharma"
                   value={name}
@@ -183,6 +203,7 @@ export default function Contact() {
                 <input
                   type="email"
                   required
+                  maxLength={254}
                   className="form-input"
                   placeholder="e.g. rahul@gmail.com"
                   value={email}
@@ -196,6 +217,7 @@ export default function Contact() {
               <input
                 type="text"
                 required
+                maxLength={150}
                 className="form-input"
                 placeholder="e.g. Room ID inquiry / Match Question"
                 value={subject}
@@ -208,6 +230,7 @@ export default function Contact() {
               <textarea
                 rows={4}
                 required
+                maxLength={5000}
                 className="form-textarea"
                 placeholder="Type your message here..."
                 value={message}
@@ -215,8 +238,8 @@ export default function Contact() {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }}>
-              <Send size={18} /> SEND MESSAGE
+            <button type="submit" disabled={sending} className="btn btn-primary btn-lg" style={{ width: '100%' }}>
+              <Send size={18} /> {sending ? 'SENDING...' : 'SEND MESSAGE'}
             </button>
           </form>
         </div>

@@ -8,17 +8,18 @@ const {
 } = require('../controllers/registrationController');
 const { validateRegistrationInput } = require('../middleware/validateMiddleware');
 const { otpRequestLimiter, otpVerifyLimiter } = require('../middleware/rateLimiter');
+const { requireRegistrationAccess } = require('../middleware/registrationAccessMiddleware');
 
 // Step 1: Submit squad details and generate OTP
-router.post('/', validateRegistrationInput, createRegistration);
+router.post('/', otpRequestLimiter, validateRegistrationInput, createRegistration);
 
 // Step 1b: Resend OTP
-router.post('/:id/send-otp', otpRequestLimiter, sendOtp);
+router.post('/:id/send-otp', otpRequestLimiter, requireRegistrationAccess, sendOtp);
 
 // Step 2: Verify 6-digit OTP
-router.post('/:id/verify-otp', otpVerifyLimiter, verifyOtp);
+router.post('/:id/verify-otp', otpVerifyLimiter, requireRegistrationAccess, verifyOtp);
 
 // Status check / details
-router.get('/:id/status', getRegistrationStatus);
+router.get('/:id/status', requireRegistrationAccess, getRegistrationStatus);
 
 module.exports = router;

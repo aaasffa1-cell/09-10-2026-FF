@@ -5,29 +5,34 @@ import {
   submitSquadRegistration, 
   resendOtp, 
   verifyOtp, 
-  createPaymentOrder, 
-  verifyPayment 
+  startPaymentRequest,
+  submitRegistrationUtr,
+  getRegistrationPaymentStatus,
 } from '../services/api';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
-  Users, 
   ShieldCheck, 
   CreditCard, 
-  CheckCircle, 
+  CheckCircle,
+  CheckCircle2,
   AlertCircle, 
   ArrowLeft, 
   KeyRound, 
-  Mail, 
-  Phone, 
-  User, 
   Flame, 
-  Lock, 
-  RefreshCw,
-  Trophy,
-  Calendar,
-  Clock
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import confetti from 'canvas-confetti';
+
+function triggerConfetti() {
+  try {
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#ff5500', '#ff2a4b', '#00ffcc', '#ffb700'],
+    });
+  } catch {}
+}
 
 export default function Register() {
   const { tournamentId } = useParams();
@@ -40,6 +45,7 @@ export default function Register() {
   // Workflow Steps: 1: SQUAD_FORM, 2: OTP_VERIFY, 3: PAYMENT, 4: CONFIRMED
   const [currentStep, setCurrentStep] = useState(1);
   const [registrationId, setRegistrationId] = useState(null);
+  const [registrationToken, setRegistrationToken] = useState(null);
 
   // Step 1: Form State (Exactly 4 players)
   const [captainName, setCaptainName] = useState('');
@@ -68,6 +74,9 @@ export default function Register() {
 
   // Confirmed Data
   const [confirmedData, setConfirmedData] = useState(null);
+  const [paymentSession, setPaymentSession] = useState(null);
+  const [paymentUnavailable, setPaymentUnavailable] = useState(false);
+  const [utr, setUtr] = useState('');
 
   // Load Tournament Info
   useEffect(() => {
@@ -99,6 +108,38 @@ export default function Register() {
     }
     return () => clearInterval(interval);
   }, [currentStep, otpCooldown]);
+
+  useEffect(() => {
+    if (currentStep !== 3 || paymentSession?.status !== 'UTR_SUBMITTED' ||
+        !registrationId || !registrationToken) return undefined;
+
+    let checking = false;
+    const interval = setInterval(async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const payment = await getRegistrationPaymentStatus(registrationId, registrationToken);
+        setPaymentSession((current) => current ? { ...current, ...payment } : payment);
+        if (payment.status === 'VERIFIED') {
+          setConfirmedData({
+            tournamentName: tournament.name,
+            captainName,
+            captainEmail,
+            squadId: registrationId,
+            amountPaid: payment.amount,
+          });
+          setCurrentStep(4);
+          triggerConfetti();
+        }
+      } catch (error) {
+        setErrorMessage(error.message || 'Payment status is temporarily unavailable.');
+      } finally {
+        checking = false;
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [currentStep, paymentSession?.status, registrationId, registrationToken, tournament?.name, captainName, captainEmail]);
 
   // Format seconds into MM:SS
   const formatTime = (seconds) => {
@@ -157,11 +198,19 @@ export default function Register() {
 
       const res = await submitSquadRegistration(payload);
       setRegistrationId(res.registrationId);
+      setRegistrationToken(res.registrationToken);
       setCurrentStep(2);
       setOtpCooldown(60);
       setOtpTimer(600);
       setSuccessMessage(res.message || 'OTP sent to captain email.');
     } catch (err) {
+      if (err.data?.registrationId) {
+        setRegistrationId(err.data.registrationId);
+        setRegistrationToken(err.data.registrationToken);
+        setCurrentStep(2);
+        setOtpCooldown(0);
+        setOtpTimer(600);
+      }
       setErrorMessage(err.message || 'Failed to submit registration.');
     } finally {
       setIsSubmitting(false);
@@ -180,9 +229,28 @@ export default function Register() {
 
     setIsSubmitting(true);
     try {
-      const res = await verifyOtp(registrationId, otp.trim());
+      await verifyOtp(registrationId, otp.trim(), registrationToken);
       setCurrentStep(3);
-      setSuccessMessage('Email verified successfully! You may now proceed to payment.');
+      setSuccessMessage('Email verified. Your ₹40 UPI payment details are ready.');
+      try {
+        const result = await startPaymentRequest(registrationId, registrationToken);
+        setPaymentUnavailable(false);
+        setPaymentSession(result.payment);
+        if (result.payment.status === 'VERIFIED') {
+          setConfirmedData({
+            tournamentName: tournament.name,
+            captainName,
+            captainEmail,
+            squadId: registrationId,
+            amountPaid: result.payment.amount,
+          });
+          setCurrentStep(4);
+          triggerConfetti();
+        }
+      } catch (paymentError) {
+        setPaymentUnavailable(paymentError.data?.code === 'UPI_NOT_CONFIGURED');
+        setErrorMessage(paymentError.message || 'Could not prepare UPI payment details.');
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Invalid or expired OTP. Please try again.');
     } finally {
@@ -195,7 +263,7 @@ export default function Register() {
     if (otpCooldown > 0) return;
     setErrorMessage(null);
     try {
-      const res = await resendOtp(registrationId);
+      const res = await resendOtp(registrationId, registrationToken);
       setOtpCooldown(60);
       setOtpTimer(600);
       setSuccessMessage(res.message || 'Fresh OTP dispatched to your email.');
@@ -204,108 +272,47 @@ export default function Register() {
     }
   };
 
-  // Step 3: Handle Payment (Razorpay)
   const handlePayEntryFee = async () => {
     setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      // 1. Create Server-Controlled Order
-      const orderData = await createPaymentOrder(registrationId);
-
-      // Check if Razorpay SDK is available on window
-      if (!window.Razorpay || orderData.isTestMode) {
-        // In local test mode without live keys, verify sandbox payment directly
-        console.log('[Payment] Executing test sandbox checkout for order:', orderData.orderId);
-        
-        const mockVerifyRes = await verifyPayment({
-          registrationId,
-          razorpay_order_id: orderData.orderId,
-          razorpay_payment_id: `pay_test_${Date.now()}`,
-          razorpay_signature: 'verified_dev',
-        });
-
+      const result = await startPaymentRequest(registrationId, registrationToken);
+      setPaymentUnavailable(false);
+      setPaymentSession(result.payment);
+      if (result.payment.status === 'VERIFIED') {
         setConfirmedData({
           tournamentName: tournament.name,
           captainName,
           captainEmail,
           squadId: registrationId,
-          amountPaid: tournament.entryFee,
+          amountPaid: result.payment.amount,
         });
         setCurrentStep(4);
         triggerConfetti();
-        return;
       }
-
-      // Live / Sandbox Razorpay Modal
-      const options = {
-        key: orderData.keyId,
-        amount: orderData.amountInPaise,
-        currency: orderData.currency || 'INR',
-        name: 'FREE FIRE ARENA',
-        description: `Squad Entry Fee for ${tournament.name}`,
-        order_id: orderData.orderId,
-        prefill: {
-          name: captainName,
-          email: captainEmail,
-          contact: captainPhone,
-        },
-        theme: {
-          color: '#ff5500',
-        },
-        handler: async function (response) {
-          try {
-            setIsSubmitting(true);
-            const verifyRes = await verifyPayment({
-              registrationId,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-
-            setConfirmedData({
-              tournamentName: tournament.name,
-              captainName,
-              captainEmail,
-              squadId: registrationId,
-              amountPaid: tournament.entryFee,
-            });
-            setCurrentStep(4);
-            triggerConfetti();
-          } catch (verErr) {
-            setErrorMessage(verErr.message || 'Server-side payment verification failed.');
-          } finally {
-            setIsSubmitting(false);
-          }
-        },
-        modal: {
-          ondismiss: function () {
-            setIsSubmitting(false);
-          },
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', function (resp) {
-        setErrorMessage(`Payment failed: ${resp.error?.description || 'Transaction cancelled'}`);
-        setIsSubmitting(false);
-      });
-      rzp.open();
     } catch (err) {
-      setErrorMessage(err.message || 'Failed to initialize payment.');
+      setPaymentUnavailable(err.data?.code === 'UPI_NOT_CONFIGURED');
+      setErrorMessage(err.message || 'UPI payment details are not configured.');
+    } finally {
       setIsSubmitting(false);
     }
   };
 
-  const triggerConfetti = () => {
+  const handleSubmitUtr = async (event) => {
+    event.preventDefault();
+    setErrorMessage(null);
+    setIsSubmitting(true);
     try {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#ff5500', '#ff2a4b', '#00ffcc', '#ffb700'],
-      });
-    } catch {}
+      const result = await submitRegistrationUtr(registrationId, utr, registrationToken);
+      setPaymentSession((current) => ({ ...current, ...result.payment }));
+      setUtr('');
+      setSuccessMessage(result.message);
+    } catch (err) {
+      setErrorMessage(err.message || 'Could not submit the UTR.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (loadingTournament) return <LoadingSpinner message="Preparing registration form..." fullScreen />;
@@ -692,13 +699,19 @@ export default function Register() {
         {/* ================= STEP 3: PAYMENT SCREEN ================= */}
         {currentStep === 3 && (
           <div className="ffa-card" style={{ padding: '35px' }}>
+            {paymentUnavailable && (
+              <div className="alert alert-error" role="status">
+                <AlertCircle size={20} style={{ flexShrink: 0 }} />
+                <div>UPI payment is not configured yet. The administrator must set the backend UPI_ID before registrations can be paid.</div>
+              </div>
+            )}
             <div style={{ textAlign: 'center', marginBottom: '25px' }}>
               <div className="badge badge-open" style={{ marginBottom: '10px' }}>
                 EMAIL VERIFIED ✓
               </div>
-              <h2 style={{ fontSize: '26px', color: '#ffffff' }}>SQUAD ENTRY FEE PAYMENT</h2>
+              <h2 style={{ fontSize: '26px', color: '#ffffff' }}>TEAM REGISTRATION PAYMENT</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-                Complete your ₹{tournament.entryFee} entry fee payment to confirm your 4-player squad slot.
+                Pay exactly ₹40 using UPI, then submit the UTR for manual admin verification.
               </p>
             </div>
 
@@ -738,21 +751,127 @@ export default function Register() {
               }}>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>Total Amount Due:</span>
                 <span style={{ fontSize: '28px', fontWeight: 900, color: 'var(--accent-green)' }}>
-                  ₹{tournament.entryFee}
+                  ₹40
                 </span>
               </div>
             </div>
 
-            {/* Payment Button */}
-            <button
-              onClick={handlePayEntryFee}
-              disabled={isSubmitting}
-              className="btn btn-primary btn-lg"
-              style={{ width: '100%', padding: '18px', fontSize: '18px' }}
-            >
-              <CreditCard size={22} />
-              {isSubmitting ? 'PROCESSING PAYMENT...' : `PAY ₹${tournament.entryFee} VIA RAZORPAY`}
-            </button>
+            {paymentSession && (
+              <div style={{
+                background: '#0c0d14',
+                border: '1px solid #1f2336',
+                borderRadius: 'var(--radius-md)',
+                padding: '22px',
+                marginBottom: '20px',
+                textAlign: 'center',
+              }}>
+                <div style={{ color: 'var(--text-dim)', fontSize: '12px', textTransform: 'uppercase' }}>
+                  Payment status
+                </div>
+                <div style={{ color: '#ffffff', fontWeight: 800, margin: '5px 0 12px' }}>
+                  {paymentSession.status === 'PENDING'
+                    ? 'Complete your ₹40 UPI payment'
+                    : paymentSession.status === 'UTR_SUBMITTED'
+                      ? 'Payment submitted. Waiting for admin verification.'
+                      : paymentSession.status === 'VERIFIED'
+                        ? 'Payment verified successfully.'
+                        : paymentSession.status === 'REJECTED'
+                          ? 'Payment could not be verified.'
+                          : paymentSession.status}
+                </div>
+                {(paymentSession.status === 'PENDING' || paymentSession.status === 'REJECTED') && (
+                  <>
+                    <QRCodeSVG
+                      value={paymentSession.upiUri}
+                      size={220}
+                      level="M"
+                      includeMargin
+                      title="UPI payment QR for exactly ₹40"
+                      style={{ maxWidth: '100%', background: '#ffffff', padding: '8px', borderRadius: '8px' }}
+                    />
+                    <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: 700, margin: '12px 0 4px' }}>
+                      UPI ID: {paymentSession.upiId}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                      Payee: {paymentSession.displayName} · Amount: ₹40
+                    </div>
+                    {paymentSession.reservationExpiresAt && (
+                      <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginTop: '5px' }}>
+                        Submit payment and UTR before {new Date(paymentSession.reservationExpiresAt).toLocaleString('en-IN')} to keep the slot reserved.
+                      </div>
+                    )}
+                    <a
+                      href={paymentSession.upiUri}
+                      className="btn btn-secondary"
+                      style={{ margin: '12px auto' }}
+                    >
+                      OPEN UPI APP
+                    </a>
+                  </>
+                )}
+                {paymentSession.registrationId && (
+                  <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginTop: '10px' }}>
+                    Registration ID: {paymentSession.registrationId}
+                  </div>
+                )}
+                {paymentSession.status === 'UTR_SUBMITTED' && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '8px' }}>
+                    An admin will check your UPI payment manually. Your team is not confirmed until it is approved.
+                  </div>
+                )}
+                {paymentSession.status === 'REJECTED' && (
+                  <div className="alert alert-error" style={{ marginTop: '14px', textAlign: 'left' }}>
+                    <AlertCircle size={18} />
+                    <span>{paymentSession.rejectionReason || 'Please check the UTR and submit a corrected reference.'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {paymentSession && ['PENDING', 'REJECTED'].includes(paymentSession.status) ? (
+              <form onSubmit={handleSubmitUtr} style={{ marginTop: '20px' }}>
+                <div className="form-group">
+                  <label className="form-label">UTR / Transaction Reference</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={utr}
+                    onChange={(event) => setUtr(event.target.value)}
+                    placeholder="Enter the UTR from your UPI app"
+                    minLength={8}
+                    maxLength={32}
+                    pattern="[A-Za-z0-9-]{8,32}"
+                    autoComplete="off"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || utr.trim().length < 8}
+                  className="btn btn-primary btn-lg"
+                  style={{ width: '100%', padding: '18px', fontSize: '18px' }}
+                >
+                  {isSubmitting ? 'SUBMITTING UTR...' : 'SUBMIT PAYMENT FOR VERIFICATION'}
+                </button>
+              </form>
+            ) : !paymentSession && (
+              <button
+                onClick={handlePayEntryFee}
+                disabled={isSubmitting}
+                className="btn btn-primary btn-lg"
+                style={{ width: '100%', padding: '18px', fontSize: '18px' }}
+              >
+                <CreditCard size={22} />
+                {isSubmitting ? 'PREPARING UPI DETAILS...' : 'SHOW UPI PAYMENT DETAILS'}
+              </button>
+            )}
+
+            <ol style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.8, margin: '20px 0 0' }}>
+              <li>Open a UPI app and scan the QR code or use the UPI ID.</li>
+              <li>Pay exactly ₹40 and copy the UTR / transaction reference.</li>
+              <li>Enter only the UTR here. Never enter your UPI PIN, OTP, or bank password.</li>
+              <li>An admin checks the payment and approves or rejects it manually.</li>
+            </ol>
 
             <div style={{
               display: 'flex',
@@ -764,7 +883,7 @@ export default function Register() {
               marginTop: '15px',
             }}>
               <ShieldCheck size={16} color="var(--accent-green)" />
-              100% Secure 256-Bit SSL Encrypted Payment (Razorpay / UPI / Cards / NetBanking)
+              UTR submission is not payment verification. Only an authenticated admin can confirm this registration.
             </div>
           </div>
         )}

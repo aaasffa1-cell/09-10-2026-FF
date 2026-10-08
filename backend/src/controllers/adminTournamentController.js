@@ -77,8 +77,7 @@ async function createTournament(req, res) {
     description,
     date,
     startTime,
-    entryFee = 40.00,
-    prizeAmount = 1000.00,
+    prizeAmount = 300.00,
     squadSize = 4,
     maxSlots = 25,
     rules,
@@ -95,8 +94,8 @@ async function createTournament(req, res) {
         description ? description.trim() : '',
         date,
         startTime.trim(),
-        parseFloat(entryFee) || 40.00,
-        parseFloat(prizeAmount) || 1000.00,
+        40.00,
+        parseFloat(prizeAmount) || 300.00,
         parseInt(squadSize, 10) || 4,
         parseInt(maxSlots, 10) || 25,
         rules ? rules.trim() : '',
@@ -134,6 +133,10 @@ async function updateTournament(req, res) {
     registrationOpen,
   } = req.body;
 
+  if (entryFee !== undefined && Number(entryFee) !== 40) {
+    return res.status(400).json({ success: false, error: 'The team registration fee is fixed at ₹40.' });
+  }
+
   try {
     // 1. Check existing tournament and confirmed squad count
     const existingRes = await query(
@@ -168,7 +171,7 @@ async function updateTournament(req, res) {
     const updatedDesc = description !== undefined ? description.trim() : current.description;
     const updatedDate = date !== undefined ? date : current.date;
     const updatedTime = startTime !== undefined ? startTime.trim() : current.start_time;
-    const updatedFee = entryFee !== undefined ? parseFloat(entryFee) : current.entry_fee;
+    const updatedFee = 40.00;
     const updatedPrize = prizeAmount !== undefined ? parseFloat(prizeAmount) : current.prize_amount;
     const updatedSquadSize = squadSize !== undefined ? parseInt(squadSize, 10) : current.squad_size;
     const updatedMaxSlots = maxSlots !== undefined ? parseInt(maxSlots, 10) : current.max_slots;
@@ -226,6 +229,20 @@ async function deleteTournament(req, res) {
       return res.status(400).json({
         success: false,
         error: `Cannot delete tournament with ${paidCount} confirmed/paid registrations. You can close registration instead.`,
+      });
+    }
+
+    const paymentHistoryRes = await query(
+      `SELECT COUNT(p.id) AS count
+       FROM payments p
+       JOIN registrations r ON r.id = p.registration_id
+       WHERE r.tournament_id = $1`,
+      [id]
+    );
+    if (parseInt(paymentHistoryRes.rows[0].count || '0', 10) > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete a tournament with payment history. Close registration instead to preserve the audit trail.',
       });
     }
 

@@ -7,7 +7,16 @@ const {
   updateTournament, 
   deleteTournament 
 } = require('../controllers/adminTournamentController');
-const { getRegistrations, getDashboardStats } = require('../controllers/adminRegistrationController');
+const {
+  getRegistrations,
+  getDashboardStats,
+  getPaymentEvents,
+} = require('../controllers/adminRegistrationController');
+const {
+  getPaymentsForAdmin,
+  verifyPayment,
+  rejectPayment,
+} = require('../controllers/paymentController');
 const { 
   saveRoomCredentials, 
   getRoomCredentials, 
@@ -35,6 +44,10 @@ router.delete('/tournaments/:id', deleteTournament);
 
 // Registrations Management
 router.get('/registrations', getRegistrations);
+router.get('/payments', getPaymentsForAdmin);
+router.get('/payments/:paymentId/events', getPaymentEvents);
+router.post('/payments/:paymentId/verify', verifyPayment);
+router.post('/payments/:paymentId/reject', rejectPayment);
 
 // Room Credentials Management
 router.get('/tournaments/:id/room', getRoomCredentials);

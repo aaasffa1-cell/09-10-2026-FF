@@ -138,6 +138,31 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Payment Management Summary */}
+        <div className="ffa-card" style={{ padding: '24px', marginBottom: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
+            <div>
+              <div className="badge badge-gold" style={{ marginBottom: '6px' }}>PAYMENT MANAGEMENT</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>₹40 team registration fees only; tournament prizes are separately organizer-funded.</div>
+            </div>
+            <Link to="/admin/registrations" className="btn btn-secondary btn-sm">View payment records</Link>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
+            {[
+              ['TOTAL TEAMS', stats?.totalTeams],
+              ['PAID TEAMS', stats?.paidTeams],
+              ['PENDING PAYMENTS', stats?.pendingPayments],
+              ['FAILED PAYMENTS', stats?.failedPayments],
+              ['TOTAL COLLECTED', `₹${stats?.totalCollected || 0}`],
+            ].map(([label, value]) => (
+              <div key={label} style={{ background: '#0d0f17', padding: '14px', borderRadius: '8px' }}>
+                <div style={{ color: 'var(--text-dim)', fontSize: '11px', fontWeight: 700 }}>{label}</div>
+                <div style={{ color: '#fff', fontSize: '23px', fontWeight: 900, marginTop: '5px' }}>{value || 0}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Quick Admin Actions & Recent Registrations */}
         <div style={{
           display: 'grid',

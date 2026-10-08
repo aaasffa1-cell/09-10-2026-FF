@@ -6,6 +6,9 @@ const { checkAndSendRoomEmails } = require('../jobs/roomScheduler');
 router.get('/check-rooms', async (req, res) => {
   // Optional cron authorization check
   const authHeader = req.headers['authorization'];
+  if (process.env.NODE_ENV === 'production' && !process.env.CRON_SECRET) {
+    return res.status(503).json({ success: false, error: 'Cron authentication is not configured.' });
+  }
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ success: false, error: 'Unauthorized cron request' });
   }

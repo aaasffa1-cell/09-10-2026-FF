@@ -4,12 +4,14 @@ const cors = require('cors');
 const helmet = require('helmet');
 const { initDb, runMigrations } = require('./database/db');
 const { generalLimiter } = require('./middleware/rateLimiter');
+const { getSessionSecret } = require('./middleware/authMiddleware');
 const { startRoomScheduler } = require('./jobs/roomScheduler');
 
 const tournamentRoutes = require('./routes/tournamentRoutes');
 const registrationRoutes = require('./routes/registrationRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -21,10 +23,11 @@ app.use(helmet({
 
 // CORS Configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+  ...(process.env.NODE_ENV === 'production' || !process.env.NODE_ENV
+    ? []
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5174', 'http://127.0.0.1:5173']),
+  ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
 ];
 
 app.use(cors({
@@ -32,11 +35,7 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl, Postman) or matched origins
     if (
       !origin ||
-      allowedOrigins.includes(origin) ||
-      process.env.NODE_ENV !== 'production' ||
-      process.env.ALLOW_ALL_ORIGINS === 'true' ||
-      origin.endsWith('.vercel.app') ||
-      (process.env.VERCEL_URL && origin.includes(process.env.VERCEL_URL))
+      allowedOrigins.includes(origin)
     ) {
       return callback(null, true);
     }
@@ -67,6 +66,9 @@ const { checkAndSendRoomEmails } = require('./jobs/roomScheduler');
 app.all('/api/cron/check-rooms', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
+    if (process.env.NODE_ENV === 'production' && !process.env.CRON_SECRET) {
+      return res.status(503).json({ success: false, error: 'Cron authentication is not configured.' });
+    }
     if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return res.status(401).json({ success: false, error: 'Unauthorized cron request.' });
     }
@@ -87,6 +89,7 @@ app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/registrations', registrationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Root Endpoint
 app.get('/', (req, res) => {
@@ -129,6 +132,7 @@ async function startServer() {
     console.log('       FREE FIRE ARENA ESPORTS BACKEND SERVER        ');
     console.log('====================================================');
 
+    getSessionSecret();
     // Initialize Database and Run Schema Migrations
     await initDb();
     await runMigrations();

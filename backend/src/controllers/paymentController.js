@@ -1,312 +1,176 @@
-const { query, getClient } = require('../database/db');
-const { createOrder, verifyPaymentSignature, verifyWebhookSignature } = require('../services/razorpayService');
+const { query } = require('../database/db');
+const {
+  ManualPaymentError,
+  createPaymentRequest,
+  getPaymentStatus: fetchPaymentStatus,
+  submitUtr: submitPaymentUtr,
+  reviewPayment,
+  getAdminPayments,
+} = require('../services/manualUpiPaymentService');
 const { sendConfirmationEmail } = require('../services/emailService');
 
-// POST /api/payments/create-order - Step 3: Create Server-Controlled Razorpay Order
-async function createPaymentOrder(req, res) {
-  const { registrationId } = req.body;
-
-  if (!registrationId) {
-    return res.status(400).json({ success: false, error: 'Registration ID is required.' });
-  }
-
-  let client;
+async function sendPaymentConfirmation(registrationId) {
   try {
-    client = await getClient();
-
-    // 1. Fetch registration & tournament details
-    const regRes = await client.query(
-      `SELECT registrations.*, tournaments.id as tourney_id, tournaments.name as tourney_name, tournaments.entry_fee, tournaments.max_slots, tournaments.registration_open,
-              COALESCE(sub.confirmed_slots, 0) as confirmed_slots
-       FROM registrations
-       JOIN tournaments ON registrations.tournament_id = tournaments.id
-       LEFT JOIN (
-         SELECT tournament_id, COUNT(id) as confirmed_slots
-         FROM registrations
-         WHERE status = 'CONFIRMED'
-         GROUP BY tournament_id
-       ) sub ON sub.tournament_id = tournaments.id
-       WHERE registrations.id = $1`,
+    const registrationResult = await query(
+      `SELECT r.*, t.name AS tournament_name, t.date AS tournament_date,
+              t.start_time AS tournament_start_time, t.entry_fee, t.prize_amount
+       FROM registrations r
+       JOIN tournaments t ON t.id = r.tournament_id
+       WHERE r.id = $1`,
+      [registrationId]
+    );
+    if (!registrationResult.rows.length) return;
+    const registration = registrationResult.rows[0];
+    const playersResult = await query(
+      `SELECT player_number, full_name, free_fire_id
+       FROM players WHERE registration_id = $1 ORDER BY player_number`,
       [registrationId]
     );
 
-    if (regRes.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Registration not found.' });
-    }
-
-    const reg = regRes.rows[0];
-
-    // 2. Validate OTP status
-    if (!reg.email_verified) {
-      return res.status(400).json({
-        success: false,
-        error: 'Captain email is not verified yet. Please complete OTP verification first.',
-      });
-    }
-
-    // 3. Validate registration state
-    if (reg.status === 'CONFIRMED' && reg.payment_status === 'PAID') {
-      return res.status(400).json({
-        success: false,
-        error: 'This registration is already paid and confirmed.',
-      });
-    }
-
-    // 4. Validate tournament slots & registration status
-    if (!reg.registration_open) {
-      return res.status(400).json({ success: false, error: 'Registration for this tournament is closed.' });
-    }
-
-    const confirmedCount = parseInt(reg.confirmed_slots || '0', 10);
-    if (confirmedCount >= reg.max_slots) {
-      return res.status(400).json({ success: false, error: 'Tournament slots are already full.' });
-    }
-
-    // 5. Server-Controlled Amount: strictly use tournament.entry_fee
-    const entryFee = parseFloat(reg.entry_fee) || 40.00;
-
-    // 6. Create Razorpay order
-    const order = await createOrder({
-      amountInRupees: entryFee,
-      currency: 'INR',
-      receipt: `squad_reg_${reg.id}`,
-      notes: {
-        registration_id: String(reg.id),
-        tournament_id: String(reg.tourney_id),
-        captain_email: reg.captain_email,
+    const emailResult = await sendConfirmationEmail(
+      registration,
+      {
+        id: registration.tournament_id,
+        name: registration.tournament_name,
+        date: registration.tournament_date,
+        start_time: registration.tournament_start_time,
+        entry_fee: registration.entry_fee,
+        prize_amount: registration.prize_amount,
       },
-    });
-
-    // 7. Store payment record
-    await client.query(
-      `INSERT INTO payments (registration_id, razorpay_order_id, amount, currency, status)
-       VALUES ($1, $2, $3, $4, 'CREATED')
-       ON CONFLICT (razorpay_order_id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`,
-      [reg.id, order.id, entryFee, 'INR']
+      playersResult.rows
     );
-
-    // 8. Update registration status to PAYMENT_PENDING
-    await client.query(
-      `UPDATE registrations SET status = 'PAYMENT_PENDING', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-      [reg.id]
+    await query(
+      `INSERT INTO email_logs
+         (registration_id, tournament_id, email_type, recipient_email, status, provider_message_id, sent_at)
+       VALUES ($1, $2, 'PAYMENT_CONFIRMATION', $3, 'SENT', $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (registration_id, tournament_id, email_type)
+       DO UPDATE SET status = 'SENT', provider_message_id = EXCLUDED.provider_message_id,
+                     sent_at = CURRENT_TIMESTAMP, last_error = NULL`,
+      [registrationId, registration.tournament_id, registration.captain_email, emailResult.messageId || null]
     );
-
-    return res.json({
-      success: true,
-      orderId: order.id,
-      amount: entryFee,
-      amountInPaise: order.amount,
-      currency: 'INR',
-      keyId: order.keyId,
-      isTestMode: order.isTestMode || false,
-      registrationId: reg.id,
-      tournamentName: reg.tourney_name,
-      captainName: reg.captain_name,
-      captainEmail: reg.captain_email,
-      captainPhone: reg.captain_phone,
-    });
   } catch (error) {
-    console.error('[PaymentController] createPaymentOrder error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to initiate payment. ' + (error.message || 'Please try again.'),
-    });
-  } finally {
-    if (client) client.release();
+    console.error('[PaymentController] Payment confirmation email failed:', error.message);
+    try {
+      const registrationResult = await query(
+        `SELECT tournament_id, captain_email FROM registrations WHERE id = $1`,
+        [registrationId]
+      );
+      if (registrationResult.rows.length) {
+        const registration = registrationResult.rows[0];
+        await query(
+          `INSERT INTO email_logs
+             (registration_id, tournament_id, email_type, recipient_email, status, last_error)
+           VALUES ($1, $2, 'PAYMENT_CONFIRMATION', $3, 'FAILED', $4)
+           ON CONFLICT (registration_id, tournament_id, email_type)
+           DO UPDATE SET status = 'FAILED', last_error = EXCLUDED.last_error`,
+          [registrationId, registration.tournament_id, registration.captain_email, error.message]
+        );
+      }
+    } catch (logError) {
+      console.error('[PaymentController] Failed to record payment email status:', logError.message);
+    }
   }
 }
 
-// POST /api/payments/verify - Server-side Signature Verification & Confirmation
-async function verifyPayment(req, res) {
-  const { registrationId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-  if (!registrationId || !razorpay_order_id || !razorpay_payment_id) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing required payment verification fields.',
-    });
+function paymentErrorResponse(res, error) {
+  if (!(error instanceof ManualPaymentError)) {
+    console.error('[PaymentController] Payment operation failed:', error);
+    return res.status(500).json({ success: false, error: 'Payment operation failed.' });
   }
-
-  // 1. Verify Signature on Server
-  const isSignatureValid = verifyPaymentSignature({
-    orderId: razorpay_order_id,
-    paymentId: razorpay_payment_id,
-    signature: razorpay_signature,
+  return res.status(error.status).json({
+    success: false,
+    error: error.message,
+    code: error.code,
   });
+}
 
-  if (!isSignatureValid) {
-    return res.status(400).json({
-      success: false,
-      error: 'Payment verification failed: Invalid cryptographic signature.',
-    });
-  }
-
-  let client;
+async function startPayment(req, res) {
   try {
-    client = await getClient();
-    await client.query('BEGIN');
+    const payment = await createPaymentRequest(req.registration.id);
+    return res.status(200).json({ success: true, payment });
+  } catch (error) {
+    return paymentErrorResponse(res, error);
+  }
+}
 
-    // 2. Fetch registration with lock
-    const regRes = await client.query(
-      `SELECT registrations.*, tournaments.id as tourney_id, tournaments.name as tourney_name, tournaments.date as tourney_date, 
-              tournaments.start_time as tourney_start_time, tournaments.entry_fee, tournaments.prize_amount, tournaments.max_slots
-       FROM registrations
-       JOIN tournaments ON registrations.tournament_id = tournaments.id
-       WHERE registrations.id = $1`,
-      [registrationId]
-    );
+async function submitUtr(req, res) {
+  try {
+    const payment = await submitPaymentUtr(req.registration.id, req.body && req.body.utr);
+    return res.status(200).json({
+      success: true,
+      message: 'Payment submitted for admin verification.',
+      payment,
+    });
+  } catch (error) {
+    return paymentErrorResponse(res, error);
+  }
+}
 
-    if (regRes.rows.length === 0) {
-      await client.query('ROLLBACK');
+async function getPaymentStatus(req, res) {
+  try {
+    const payment = await fetchPaymentStatus(req.registration.id);
+    if (!payment) {
       return res.status(404).json({ success: false, error: 'Registration not found.' });
     }
-
-    const reg = regRes.rows[0];
-
-    // Idempotency: If already confirmed, return success immediately
-    if (reg.status === 'CONFIRMED' && reg.payment_status === 'PAID') {
-      await client.query('COMMIT');
-      return res.json({
-        success: true,
-        alreadyProcessed: true,
-        status: 'CONFIRMED',
-        message: 'Payment already verified and registration is confirmed.',
-        registrationId: reg.id,
-      });
-    }
-
-    // 3. Double-check slot limit inside transaction
-    const slotsRes = await client.query(
-      `SELECT COUNT(id) as confirmed_count FROM registrations 
-       WHERE tournament_id = $1 AND status = 'CONFIRMED'`,
-      [reg.tourney_id]
-    );
-    const confirmedCount = parseInt(slotsRes.rows[0].confirmed_count || '0', 10);
-
-    if (confirmedCount >= reg.max_slots) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        error: 'Unfortunately all slots were filled just before this payment was verified. Please contact support.',
-      });
-    }
-
-    // 4. Update Payment record
-    await client.query(
-      `UPDATE payments 
-       SET razorpay_payment_id = $1, razorpay_signature = $2, status = 'SUCCESS', updated_at = CURRENT_TIMESTAMP
-       WHERE registration_id = $3 AND (razorpay_order_id = $4 OR razorpay_order_id IS NULL)`,
-      [razorpay_payment_id, razorpay_signature || 'verified_dev', registrationId, razorpay_order_id]
-    );
-
-    // 5. Update Registration status to CONFIRMED
-    await client.query(
-      `UPDATE registrations 
-       SET status = 'CONFIRMED', payment_status = 'PAID', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [registrationId]
-    );
-
-    // Fetch players for confirmation email
-    const playersRes = await client.query(
-      `SELECT player_number, full_name, free_fire_id FROM players WHERE registration_id = $1 ORDER BY player_number ASC`,
-      [registrationId]
-    );
-
-    await client.query('COMMIT');
-
-    // 6. Send Registration & Payment Confirmation Email
-    try {
-      await sendConfirmationEmail(
-        reg,
-        {
-          id: reg.tourney_id,
-          name: reg.tourney_name,
-          date: reg.tourney_date,
-          start_time: reg.tourney_start_time,
-          entry_fee: reg.entry_fee,
-          prize_amount: reg.prize_amount,
-        },
-        playersRes.rows
-      );
-
-      // Log in email_logs
-      await query(
-        `INSERT INTO email_logs (registration_id, tournament_id, email_type, recipient_email, status, sent_at)
-         VALUES ($1, $2, 'PAYMENT_CONFIRMATION', $3, 'SENT', CURRENT_TIMESTAMP)
-         ON CONFLICT (registration_id, tournament_id, email_type) DO NOTHING`,
-        [registrationId, reg.tourney_id, reg.captain_email]
-      );
-    } catch (emailErr) {
-      console.warn('[PaymentController] Confirmation email warning:', emailErr.message);
-    }
-
-    return res.json({
-      success: true,
-      status: 'CONFIRMED',
-      paymentStatus: 'PAID',
-      message: 'Payment verified successfully! Your squad is confirmed for the tournament.',
-      registrationId: reg.id,
-      tournamentName: reg.tourney_name,
-      captainName: reg.captain_name,
-      captainEmail: reg.captain_email,
-    });
+    return res.json({ success: true, payment });
   } catch (error) {
-    if (client) await client.query('ROLLBACK').catch(() => {});
-    console.error('[PaymentController] verifyPayment error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Payment verification failed due to internal error.',
-    });
-  } finally {
-    if (client) client.release();
+    return paymentErrorResponse(res, error);
   }
 }
 
-// POST /api/payments/webhook - Razorpay Webhook Handler (Idempotent)
-async function handleWebhook(req, res) {
-  const signature = req.headers['x-razorpay-signature'];
-  const body = req.body;
-
-  if (process.env.RAZORPAY_WEBHOOK_SECRET) {
-    const isValid = verifyWebhookSignature(JSON.stringify(body), signature);
-    if (!isValid) {
-      return res.status(400).json({ success: false, error: 'Invalid webhook signature.' });
-    }
+async function getPaymentsForAdmin(req, res) {
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  const search = typeof req.query.search === 'string' ? req.query.search : '';
+  const sort = req.query.sort === 'oldest' ? 'oldest' : 'newest';
+  try {
+    const result = await getAdminPayments({ status, search, sort });
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('[PaymentController] Admin payment list failed:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch payment review queue.' });
   }
+}
 
-  const event = body.event;
-  if (event === 'payment.captured' || event === 'order.paid') {
-    const paymentEntity = body.payload?.payment?.entity;
-    const orderId = paymentEntity?.order_id;
-    const paymentId = paymentEntity?.id;
-
-    if (orderId) {
-      try {
-        const payRes = await query(`SELECT * FROM payments WHERE razorpay_order_id = $1`, [orderId]);
-        if (payRes.rows.length > 0) {
-          const payment = payRes.rows[0];
-          await query(
-            `UPDATE payments SET status = 'SUCCESS', razorpay_payment_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-            [paymentId, payment.id]
-          );
-          await query(
-            `UPDATE registrations SET status = 'CONFIRMED', payment_status = 'PAID', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-            [payment.registration_id]
-          );
-          console.log(`[Webhook] Confirmed registration #${payment.registration_id} via webhook.`);
-        }
-      } catch (err) {
-        console.error('[Webhook Error]', err);
-      }
-    }
+async function verifyPayment(req, res) {
+  const paymentId = Number(req.params.paymentId);
+  if (!Number.isSafeInteger(paymentId) || paymentId < 1) {
+    return res.status(400).json({ success: false, error: 'A valid payment ID is required.' });
   }
+  try {
+    const result = await reviewPayment(paymentId, req.admin.id, 'verify');
+    await sendPaymentConfirmation(result.registrationId);
+    return res.json({
+      success: true,
+      message: 'Payment verified and team registration confirmed.',
+      payment: { registrationId: `REG-${result.registrationId}`, status: result.status },
+    });
+  } catch (error) {
+    return paymentErrorResponse(res, error);
+  }
+}
 
-  return res.json({ status: 'ok' });
+async function rejectPayment(req, res) {
+  const paymentId = Number(req.params.paymentId);
+  if (!Number.isSafeInteger(paymentId) || paymentId < 1) {
+    return res.status(400).json({ success: false, error: 'A valid payment ID is required.' });
+  }
+  try {
+    const result = await reviewPayment(paymentId, req.admin.id, 'reject', req.body && req.body.reason);
+    return res.json({
+      success: true,
+      message: 'Payment rejected. The player can submit a corrected UTR.',
+      payment: { registrationId: `REG-${result.registrationId}`, status: result.status },
+    });
+  } catch (error) {
+    return paymentErrorResponse(res, error);
+  }
 }
 
 module.exports = {
-  createPaymentOrder,
+  startPayment,
+  submitUtr,
+  getPaymentStatus,
+  getPaymentsForAdmin,
   verifyPayment,
-  handleWebhook,
+  rejectPayment,
 };

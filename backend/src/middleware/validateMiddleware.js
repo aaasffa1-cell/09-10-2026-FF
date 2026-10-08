@@ -88,8 +88,8 @@ function validateTournamentInput(req, res, next) {
     errors.push('Valid tournament start time is required (e.g. "08:00 PM").');
   }
 
-  if (entryFee !== undefined && (isNaN(Number(entryFee)) || Number(entryFee) < 0)) {
-    errors.push('Entry fee must be a valid non-negative number.');
+  if (entryFee !== undefined && Number(entryFee) !== 40) {
+    errors.push('The team registration fee is fixed at ₹40.');
   }
 
   if (prizeAmount !== undefined && (isNaN(Number(prizeAmount)) || Number(prizeAmount) < 0)) {
@@ -115,7 +115,34 @@ function validateTournamentInput(req, res, next) {
   next();
 }
 
+function validateContactMessage(req, res, next) {
+  const { name, email, subject, message } = req.body;
+
+  if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
+    return res.status(400).json({ success: false, error: 'Name must be between 2 and 100 characters.' });
+  }
+
+  if (typeof email !== 'string' || !validator.isEmail(email.trim())) {
+    return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+  }
+
+  if (typeof subject !== 'string' || subject.trim().length < 2 || subject.trim().length > 150) {
+    return res.status(400).json({ success: false, error: 'Subject must be between 2 and 150 characters.' });
+  }
+
+  if (typeof message !== 'string' || message.trim().length < 5 || message.trim().length > 5000) {
+    return res.status(400).json({ success: false, error: 'Message must be between 5 and 5000 characters.' });
+  }
+
+  req.body.name = name.trim();
+  req.body.email = email.trim().toLowerCase();
+  req.body.subject = subject.trim().replace(/[\r\n]+/g, ' ');
+  req.body.message = message.trim();
+  return next();
+}
+
 module.exports = {
   validateRegistrationInput,
   validateTournamentInput,
+  validateContactMessage,
 };

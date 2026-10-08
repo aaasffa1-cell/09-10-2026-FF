@@ -1,4 +1,5 @@
 const http = require('http');
+const TEST_PORT = parseInt(process.env.TEST_PORT || '5000', 10);
 
 function makeRequest(options, postData) {
   return new Promise((resolve, reject) => {
@@ -26,7 +27,7 @@ function makeRequest(options, postData) {
 
 async function runE2ETests() {
   console.log('\n======================================================');
-  console.log('    RUNNING END-TO-END HTTP API SUITE (PORT 5000)     ');
+  console.log(`    RUNNING END-TO-END HTTP API SUITE (PORT ${TEST_PORT})     `);
   console.log('======================================================\n');
 
   try {
@@ -34,7 +35,7 @@ async function runE2ETests() {
     console.log('[E2E 1] Checking API Health...');
     const health = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: '/api/health',
       method: 'GET',
     });
@@ -47,7 +48,7 @@ async function runE2ETests() {
     console.log('\n[E2E 2] Fetching public tournaments list...');
     const tourneys = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: '/api/tournaments',
       method: 'GET',
     });
@@ -58,6 +59,7 @@ async function runE2ETests() {
 
     const testTourney = tourneys.body.tournaments[0];
     const initialConfirmed = testTourney.confirmedSlots;
+    const runId = Date.now();
     console.log(`  Target Match: "${testTourney.name}" (#${testTourney.id}), Confirmed Slots: ${initialConfirmed}/${testTourney.maxSlots}`);
 
     // 3. Submit Squad Registration (4 Players)
@@ -67,38 +69,56 @@ async function runE2ETests() {
       captainName: 'Aman Sharma',
       captainEmail: `captain_${Date.now()}@arena.com`,
       captainPhone: '9876543210',
-      captainFreeFireId: `FF_AMAN_${Date.now()}`,
+      captainFreeFireId: `FF_AMAN_${runId}`,
       players: [
-        { fullName: 'Aman Sharma', freeFireId: `FF_AMAN_${Date.now()}` },
-        { fullName: 'Rohit Varma', freeFireId: `FF_ROHIT_${Date.now()}` },
-        { fullName: 'Sanjay Kumar', freeFireId: `FF_SANJAY_${Date.now()}` },
-        { fullName: 'Vikram Singh', freeFireId: `FF_VIKRAM_${Date.now()}` },
+        { fullName: 'Aman Sharma', freeFireId: `FF_AMAN_${runId}` },
+        { fullName: 'Rohit Varma', freeFireId: `FF_ROHIT_${runId}` },
+        { fullName: 'Sanjay Kumar', freeFireId: `FF_SANJAY_${runId}` },
+        { fullName: 'Vikram Singh', freeFireId: `FF_VIKRAM_${runId}` },
       ],
     };
 
     const regResponse = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: '/api/registrations',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     }, regPayload);
 
-    console.log(`✓ Status ${regResponse.status}:`, regResponse.body);
+    console.log(`✓ Status ${regResponse.status}:`, {
+      success: regResponse.body.success,
+      registrationId: regResponse.body.registrationId,
+    });
     if (regResponse.status !== 201 || !regResponse.body.registrationId) {
       throw new Error('Registration submission failed');
     }
     const registrationId = regResponse.body.registrationId;
+    const registrationToken = regResponse.body.registrationToken;
+    if (!registrationToken) throw new Error('Registration access token was not issued.');
     const testOtpCode = regResponse.body.devOtp;
 
-    // 4. Verify OTP on HTTP endpoint
-    console.log(`\n[E2E 4] Verifying 6-Digit OTP (${testOtpCode}) for Registration #${registrationId}...`);
+    // 4. Registration status and OTP require the registration's private access token.
+    const unauthenticatedStatus = await makeRequest({
+      hostname: 'localhost',
+      port: TEST_PORT,
+      path: `/api/registrations/${registrationId}/status`,
+      method: 'GET',
+    });
+    if (unauthenticatedStatus.status !== 401) {
+      throw new Error('Registration status exposed private team information without its access token.');
+    }
+
+    console.log(`\n[E2E 4] Verifying development OTP for Registration #${registrationId}...`);
     const verifyOtpRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/registrations/${registrationId}/verify-otp`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Registration-Token': registrationToken,
+      },
     }, { otp: testOtpCode });
 
     console.log(`✓ Status ${verifyOtpRes.status}:`, verifyOtpRes.body);
@@ -106,80 +126,118 @@ async function runE2ETests() {
       throw new Error('OTP verification endpoint failed');
     }
 
-    // 5. Payment Order Creation
-    console.log('\n[E2E 5] Creating Razorpay Payment Order (₹40)...');
-    const orderRes = await makeRequest({
+    // 5. Manual UPI request/UTR never confirms payment automatically.
+    console.log('\n[E2E 5] Checking manual UPI payment behavior...');
+    const paymentStart = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
-      path: '/api/payments/create-order',
+      port: TEST_PORT,
+      path: `/api/payments/registrations/${registrationId}/start`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }, { registrationId });
-
-    console.log(`✓ Status ${orderRes.status}:`, orderRes.body);
-    if (orderRes.status !== 200 || !orderRes.body.orderId || orderRes.body.amount !== 40) {
-      throw new Error('Payment order creation failed');
-    }
-
-    // 6. Payment Signature Verification
-    console.log('\n[E2E 6] Verifying Payment Signature on Server...');
-    const verifyPayRes = await makeRequest({
-      hostname: 'localhost',
-      port: 5000,
-      path: '/api/payments/verify',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }, {
-      registrationId,
-      razorpay_order_id: orderRes.body.orderId,
-      razorpay_payment_id: `pay_e2e_${Date.now()}`,
-      razorpay_signature: 'verified_dev',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Registration-Token': registrationToken,
+      },
     });
 
-    console.log(`✓ Status ${verifyPayRes.status}:`, verifyPayRes.body);
-    if (verifyPayRes.status !== 200 || verifyPayRes.body.status !== 'CONFIRMED') {
-      throw new Error('Payment signature verification failed');
+    if (process.env.UPI_ID) {
+      if (paymentStart.status !== 200 || paymentStart.body.payment?.amount !== 40 ||
+          paymentStart.body.payment?.status !== 'PENDING' ||
+          !paymentStart.body.payment?.upiUri?.startsWith('upi://pay?')) {
+        throw new Error('Configured manual UPI request did not return a ₹40 payment URI.');
+      }
+      const utrRes = await makeRequest({
+        hostname: 'localhost',
+        port: TEST_PORT,
+        path: `/api/payments/registrations/${registrationId}/utr`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Registration-Token': registrationToken,
+        },
+      }, { utr: `TEST${Date.now()}1234` });
+      if (utrRes.status !== 200 || utrRes.body.payment?.status !== 'UTR_SUBMITTED') {
+        throw new Error('Test UTR was not stored for manual admin review.');
+      }
+      const playerPaymentStatus = await makeRequest({
+        hostname: 'localhost',
+        port: TEST_PORT,
+        path: `/api/payments/registrations/${registrationId}/status`,
+        method: 'GET',
+        headers: { 'X-Registration-Token': registrationToken },
+      });
+      if (playerPaymentStatus.status !== 200 || Object.hasOwn(playerPaymentStatus.body.payment || {}, 'utr')) {
+        throw new Error('Player payment status exposed the submitted UTR.');
+      }
+    } else if (paymentStart.status !== 503 || paymentStart.body.code !== 'UPI_NOT_CONFIGURED') {
+      throw new Error('Missing UPI configuration did not fail closed.');
+    }
+
+    // 6. Player cannot access admin payment verification.
+    const forgedVerifyRes = await makeRequest({
+      hostname: 'localhost',
+      port: TEST_PORT,
+      path: '/api/admin/payments/1/verify',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (forgedVerifyRes.status !== 401) {
+      throw new Error('A player request without admin authentication reached payment verification.');
     }
 
     // 7. Check Slot Count Updated
     console.log('\n[E2E 7] Checking Tournament Slot Count Updated...');
     const updatedTourneyRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/tournaments/${testTourney.id}`,
       method: 'GET',
     });
     console.log(`✓ Tournament Details: Confirmed Slots: ${updatedTourneyRes.body.tournament?.confirmedSlots}/${updatedTourneyRes.body.tournament?.maxSlots}`);
-    if (updatedTourneyRes.body.tournament.confirmedSlots !== initialConfirmed + 1) {
-      throw new Error('Slot count did not increment!');
+    if (updatedTourneyRes.body.tournament.confirmedSlots !== initialConfirmed) {
+      throw new Error('Unverified payment changed the tournament slot count.');
     }
 
     // 8. Admin Authentication
     console.log('\n[E2E 8] Admin Login...');
     const adminLoginRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: '/api/admin/login',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     }, {
-      email: 'admin@freefirearena.com',
-      password: 'admin123456',
+      email: process.env.ADMIN_EMAIL,
+      password: process.env.ADMIN_PASSWORD,
     });
     console.log(`✓ Admin Login Status ${adminLoginRes.status}:`, adminLoginRes.body.message);
-    if (adminLoginRes.status !== 200 || !adminLoginRes.body.token) {
+    if (adminLoginRes.status !== 200 || !adminLoginRes.headers['set-cookie']?.length) {
       throw new Error('Admin login failed');
     }
-    const adminToken = adminLoginRes.body.token;
+    const adminCookie = adminLoginRes.headers['set-cookie'][0].split(';')[0];
+
+    if (process.env.UPI_ID) {
+      const queueRes = await makeRequest({
+        hostname: 'localhost',
+        port: TEST_PORT,
+        path: `/api/admin/payments?status=UTR_SUBMITTED&search=${registrationId}`,
+        method: 'GET',
+        headers: { Cookie: adminCookie },
+      });
+      if (queueRes.status !== 200 ||
+          !queueRes.body.payments?.some((payment) => payment.registration_id === registrationId)) {
+        throw new Error('Admin payment review queue did not contain the submitted UTR.');
+      }
+    }
 
     // 9. Admin Stats
     console.log('\n[E2E 9] Fetching Admin Dashboard Stats...');
     const statsRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: '/api/admin/stats',
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${adminToken}` },
+      headers: { 'Cookie': adminCookie },
     });
     console.log(`✓ Stats Status ${statsRes.status}:`, statsRes.body.stats);
 
@@ -187,12 +245,12 @@ async function runE2ETests() {
     console.log('\n[E2E 10] Admin Saving Custom Room Credentials...');
     const saveRoomRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/admin/tournaments/${testTourney.id}/room`,
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${adminToken}`,
+        'Cookie': adminCookie,
       },
     }, {
       roomId: 'ROOM_99412',
@@ -204,7 +262,7 @@ async function runE2ETests() {
     console.log('\n[E2E 11] Verifying Room Credentials NOT in Public API...');
     const publicCheck = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/tournaments/${testTourney.id}`,
       method: 'GET',
     });
@@ -217,10 +275,10 @@ async function runE2ETests() {
     console.log('\n[E2E 12] Triggering Room Email Dispatch...');
     const dispatchRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/admin/tournaments/${testTourney.id}/send-room-emails`,
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${adminToken}` },
+      headers: { 'Cookie': adminCookie },
     });
     console.log(`✓ Dispatch Status ${dispatchRes.status}:`, dispatchRes.body);
 
@@ -228,10 +286,10 @@ async function runE2ETests() {
     console.log('\n[E2E 13] Triggering dispatch again to verify Duplicate Protection...');
     const dispatchAgainRes = await makeRequest({
       hostname: 'localhost',
-      port: 5000,
+      port: TEST_PORT,
       path: `/api/admin/tournaments/${testTourney.id}/send-room-emails`,
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${adminToken}` },
+      headers: { 'Cookie': adminCookie },
     });
     console.log(`✓ Duplicate Protection Status: Sent: ${dispatchAgainRes.body.dispatchedCount}, Already Sent: ${dispatchAgainRes.body.alreadySentCount}`);
     if (dispatchAgainRes.body.dispatchedCount !== 0) {

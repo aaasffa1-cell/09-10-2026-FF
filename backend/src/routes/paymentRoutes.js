@@ -1,18 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  createPaymentOrder, 
-  verifyPayment, 
-  handleWebhook 
+const {
+  startPayment,
+  submitUtr,
+  getPaymentStatus,
 } = require('../controllers/paymentController');
+const { requireRegistrationAccess } = require('../middleware/registrationAccessMiddleware');
+const {
+  paymentOrderLimiter,
+  paymentStatusLimiter,
+  paymentUtrLimiter,
+} = require('../middleware/rateLimiter');
 
-// Step 3: Create Server-controlled Razorpay order
-router.post('/create-order', createPaymentOrder);
-
-// Step 4: Verify server-side Razorpay signature and confirm registration
-router.post('/verify', verifyPayment);
-
-// Webhook for asynchronous payment verification
-router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+router.post('/registrations/:id/start', paymentOrderLimiter, requireRegistrationAccess, startPayment);
+router.post('/registrations/:id/utr', paymentUtrLimiter, requireRegistrationAccess, submitUtr);
+router.get('/registrations/:id/status', paymentStatusLimiter, requireRegistrationAccess, getPaymentStatus);
 
 module.exports = router;

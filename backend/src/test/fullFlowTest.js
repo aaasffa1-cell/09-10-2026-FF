@@ -1,10 +1,12 @@
 require('dotenv').config();
 const { initDb, runMigrations, query } = require('../database/db');
 const { createOtpForRegistration, verifyOtpForRegistration } = require('../services/otpService');
-const { createOrder, verifyPaymentSignature } = require('../services/razorpayService');
+const {
+  createPaymentRequest,
+  submitUtr,
+} = require('../services/manualUpiPaymentService');
 const { parseTournamentDateTime, checkAndSendRoomEmails } = require('../jobs/roomScheduler');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
 function getNearFutureTimeFormatted(minutesAhead = 8) {
   const d = new Date(Date.now() + minutesAhead * 60 * 1000);
@@ -19,6 +21,15 @@ function getNearFutureTimeFormatted(minutesAhead = 8) {
 }
 
 async function runAcceptanceTest() {
+  if (process.env.RUN_FULL_FLOW_TEST !== 'true' || !process.env.TEST_DATABASE_URL) {
+    throw new Error('Set RUN_FULL_FLOW_TEST=true and TEST_DATABASE_URL to run against an explicitly selected test database.');
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('The full-flow test cannot run with NODE_ENV=production.');
+  }
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  process.env.DB_SSL = 'false';
+
   console.log('\n======================================================');
   console.log('    FREE FIRE ARENA - FULL ACCEPTANCE TEST SUITE      ');
   console.log('======================================================\n');
@@ -61,20 +72,25 @@ async function runAcceptanceTest() {
 
     // 3. Admin Authentication
     console.log('\n[Test 3] Testing Admin Login...');
-    const adminRes = await query(`SELECT * FROM admins WHERE email = 'admin@freefirearena.com'`);
-    if (adminRes.rows.length === 0) throw new Error('Admin account not found in DB.');
-    const admin = adminRes.rows[0];
-    const passwordMatch = await bcrypt.compare('admin123456', admin.password_hash);
-    if (!passwordMatch) throw new Error('Admin password hash mismatch.');
-    const token = jwt.sign({ id: admin.id, email: admin.email }, process.env.SESSION_SECRET || 'secret', { expiresIn: '1h' });
-    console.log('✓ Admin login successful with bcrypt comparison. Generated JWT token:', token.substring(0, 20) + '...');
+    if (process.env.TEST_ADMIN_EMAIL && process.env.TEST_ADMIN_PASSWORD) {
+      const adminRes = await query(
+        `SELECT password_hash FROM admins WHERE LOWER(email) = LOWER($1)`,
+        [process.env.TEST_ADMIN_EMAIL]
+      );
+      if (!adminRes.rows.length || !(await bcrypt.compare(process.env.TEST_ADMIN_PASSWORD, adminRes.rows[0].password_hash))) {
+        throw new Error('Configured test administrator credentials could not be verified.');
+      }
+      console.log('✓ Configured test administrator credentials verified.');
+    } else {
+      console.log('↷ Skipping administrator credential check; TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD are not set.');
+    }
 
     // 4. Admin Create Custom Test Tournament with start time ~8 mins in future (in 10-min email window)
     const testMatchTime = getNearFutureTimeFormatted(8);
     console.log(`\n[Test 4] Admin Creating Test Tournament with start_time: ${testMatchTime} (in ~8 mins)...`);
     const createTourneyRes = await query(`
       INSERT INTO tournaments (name, description, date, start_time, entry_fee, prize_amount, squad_size, max_slots, rules, registration_open)
-      VALUES ($1, $2, CURRENT_DATE, $3, 40.00, 1000.00, 4, 2, 'Fair play only. Mobile devices.', TRUE)
+      VALUES ($1, $2, CURRENT_DATE, $3, 40.00, 300.00, 4, 2, 'Fair play only. Mobile devices.', TRUE)
       RETURNING *
     `, ['Free Fire BR Acceptance Cup', 'Special 2-Slot Acceptance Test Tournament', testMatchTime]);
     const testTourney = createTourneyRes.rows[0];
@@ -84,8 +100,10 @@ async function runAcceptanceTest() {
     console.log('\n[Test 5] Player registering 4-player squad...');
     const captainEmail = 'killer.captain@example.com';
     const regRes = await query(`
-      INSERT INTO registrations (tournament_id, captain_name, captain_email, captain_phone, status, email_verified, payment_status)
-      VALUES ($1, 'Aman Sharma (Captain)', $2, '9876543210', 'PENDING', FALSE, 'PENDING')
+      INSERT INTO registrations
+        (tournament_id, captain_name, captain_email, captain_phone, status, email_verified, payment_status, reservation_expires_at)
+      VALUES ($1, 'Aman Sharma (Captain)', $2, '9876543210', 'PENDING', FALSE, 'PENDING',
+              CURRENT_TIMESTAMP + INTERVAL '15 minutes')
       RETURNING *
     `, [testTourney.id, captainEmail]);
     const registrationId = regRes.rows[0].id;
@@ -125,45 +143,31 @@ async function runAcceptanceTest() {
     if (reuseVerify.valid) throw new Error('OTP was reused after verification!');
     console.log('✓ OTP single-use protection verified (cannot be reused).');
 
-    // 7. Payment Order Creation
-    console.log('\n[Test 7] Creating Server-Controlled Razorpay Order for ₹40...');
-    const order = await createOrder({
-      amountInRupees: parseFloat(testTourney.entry_fee),
-      currency: 'INR',
-      receipt: `reg_${registrationId}`,
-    });
-    console.log(`✓ Razorpay Order Created: ${order.id}, Amount: ₹${order.amount / 100} (${order.amount} paise)`);
+    // 7. UPI payment request and manual UTR review
+    console.log('\n[Test 7] Creating a ₹40 UPI request and submitting a test-only UTR...');
+    if (!process.env.TEST_UPI_ID) {
+      throw new Error('Set TEST_UPI_ID to an explicitly selected UPI handle for this local acceptance test.');
+    }
+    process.env.UPI_ID = process.env.TEST_UPI_ID;
+    process.env.UPI_DISPLAY_NAME = process.env.TEST_UPI_DISPLAY_NAME || 'Free Fire Arena Test';
+    const payment = await createPaymentRequest(registrationId);
+    if (payment.amount !== 40 || payment.status !== 'PENDING' || !payment.upiUri.startsWith('upi://pay?')) {
+      throw new Error('The payment request did not match the required ₹40 UPI flow.');
+    }
+    const submittedUtr = await submitUtr(registrationId, `TEST${Date.now()}1234`);
+    if (submittedUtr.status !== 'UTR_SUBMITTED') {
+      throw new Error('The UTR was not recorded for admin review.');
+    }
+    console.log('✓ UPI request is ₹40 and the test UTR remains unverified pending manual admin review.');
 
-    // Record payment created
-    await query(
-      `INSERT INTO payments (registration_id, razorpay_order_id, amount, currency, status)
-       VALUES ($1, $2, 40.00, 'INR', 'CREATED')`,
-      [registrationId, order.id]
-    );
-
-    // 8. Payment Signature Verification & Confirmation
-    console.log('\n[Test 8] Verifying Payment Signature & Confirming Registration...');
-    const mockPaymentId = `pay_${Date.now()}`;
-    const mockSignature = 'verified_dev_signature';
-
-    await query(
-      `UPDATE payments SET razorpay_payment_id = $1, razorpay_signature = $2, status = 'SUCCESS' WHERE registration_id = $3`,
-      [mockPaymentId, mockSignature, registrationId]
-    );
-    await query(
-      `UPDATE registrations SET status = 'CONFIRMED', payment_status = 'PAID' WHERE id = $1`,
-      [registrationId]
-    );
-    console.log('✓ Registration marked as CONFIRMED, payment_status marked as PAID.');
-
-    // 9. Slot Count Verification
-    console.log('\n[Test 9] Verifying Confirmed Slot Count...');
+    // 8. Slot Count Verification
+    console.log('\n[Test 8] Verifying UTR submission did not confirm the squad...');
     const slotCheck = await query(`
       SELECT COUNT(id) as count FROM registrations WHERE tournament_id = $1 AND status = 'CONFIRMED'
     `, [testTourney.id]);
     const confirmedSlots = parseInt(slotCheck.rows[0].count, 10);
     console.log(`✓ Current Confirmed Slots: ${confirmedSlots} / ${testTourney.max_slots}`);
-    if (confirmedSlots !== 1) throw new Error(`Expected 1 confirmed slot, found ${confirmedSlots}`);
+    if (confirmedSlots !== 0) throw new Error(`Expected 0 confirmed slots, found ${confirmedSlots}`);
 
     // 10. Admin Adding Room Credentials
     console.log('\n[Test 10] Admin saving Room ID and Room Password...');
@@ -183,26 +187,14 @@ async function runAcceptanceTest() {
     }
     console.log('✓ Verified: Public tournament model does NOT expose room credentials.');
 
-    // 11. Scheduler & Duplicate Email Protection
-    console.log('\n[Test 11] Testing Scheduler Room Email Dispatch & Duplicate Protection...');
-    // Trigger scheduler check
+    // 10. Scheduler must not send credentials to an unconfirmed team.
+    console.log('\n[Test 10] Verifying room credentials are not sent before verified payment...');
     await checkAndSendRoomEmails();
-
-    const emailLogsFirst = await query(`
+    const emailLogs = await query(`
       SELECT * FROM email_logs WHERE tournament_id = $1 AND registration_id = $2 AND email_type = 'ROOM_CREDENTIALS'
     `, [testTourney.id, registrationId]);
-    console.log(`✓ First scheduler run: Email logged. Total logs: ${emailLogsFirst.rows.length}`);
-    if (emailLogsFirst.rows.length !== 1) throw new Error('Room credentials email was not logged!');
-
-    // Run scheduler second time to test idempotency
-    console.log('  Running scheduler a second time (should NOT duplicate email)...');
-    await checkAndSendRoomEmails();
-
-    const emailLogsSecond = await query(`
-      SELECT * FROM email_logs WHERE tournament_id = $1 AND registration_id = $2 AND email_type = 'ROOM_CREDENTIALS'
-    `, [testTourney.id, registrationId]);
-    console.log(`✓ Duplicate Protection: Still exactly ${emailLogsSecond.rows.length} email log record.`);
-    if (emailLogsSecond.rows.length !== 1) throw new Error('Duplicate room email was dispatched!');
+    if (emailLogs.rows.length !== 0) throw new Error('Room credentials were sent to an unconfirmed squad.');
+    console.log('✓ Unpaid registration did not receive room credentials.');
 
     console.log('\n======================================================');
     console.log('    ✓✓ ALL ACCEPTANCE TESTS PASSED SUCCESSFULLY! ✓✓    ');
