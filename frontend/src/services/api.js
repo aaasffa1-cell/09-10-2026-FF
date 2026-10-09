@@ -1,10 +1,7 @@
-const configuredApiBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').trim();
-const isVercelDeployment = window.location.hostname.endsWith('.vercel.app');
-let rawApiBase = isVercelDeployment ? '' : configuredApiBase;
+const configuredApiBase = (import.meta.env.VITE_API_URL || '').trim();
+let rawApiBase = configuredApiBase;
 
-if (!rawApiBase) {
-  rawApiBase = '/api';
-} else {
+if (rawApiBase) {
   if (rawApiBase.endsWith('/')) {
     rawApiBase = rawApiBase.slice(0, -1);
   }
@@ -17,6 +14,10 @@ const API_BASE = rawApiBase;
 
 // Helper for HTTP requests
 async function request(endpoint, options = {}) {
+  if (!API_BASE) {
+    throw new Error('VITE_API_URL is not configured. Set it to the backend API URL.');
+  }
+
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${API_BASE}${normalizedEndpoint}`;
   

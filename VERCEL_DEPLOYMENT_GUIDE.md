@@ -30,7 +30,7 @@ Backend/serverless variables:
 
 Frontend variable:
 
-`VITE_API_URL` (optional API base URL for non-Vercel hosting; never use it for a secret). On Vercel, leave it unset: the frontend calls `/api` on its own origin, so production and preview deployments use their matching API.
+`VITE_API_URL` (required backend origin or API base URL; never use it for a secret). The frontend sends API requests only to this configured URL. Set it in the frontend build environment for each deployment; if the value is a backend origin without `/api`, the frontend adds `/api`. Configure the backend's `FRONTEND_URL` to allow the frontend's exact origin.
 
 See `.env.example`, `backend/.env.example`, and `frontend/.env.example` for variable names. They intentionally contain no credential values.
 
