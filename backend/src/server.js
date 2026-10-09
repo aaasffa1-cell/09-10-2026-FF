@@ -16,6 +16,17 @@ const contactRoutes = require('./routes/contactRoutes');
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
+function isLocalhostOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) &&
+      url.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 // Security Headers
 app.use(helmet({
   crossOriginResourcePolicy: false,
@@ -32,9 +43,10 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, Postman) or matched origins
+    // Local development frontends may use any localhost port, even with a production API.
     if (
       !origin ||
+      isLocalhostOrigin(origin) ||
       allowedOrigins.includes(origin)
     ) {
       return callback(null, true);

@@ -17,7 +17,7 @@ Root `vercel.json` rewrites `/api/*` to the serverless Express adapter and other
 3. Check migration history with `npm run db:status`; apply the migration with `npm run db:setup` only after confirming the target URL.
 4. Create the initial admin account using backend-only `ADMIN_EMAIL` and `ADMIN_PASSWORD`. These are synchronized into the database during setup/startup; do not use documented/default credentials.
 5. Configure SMTP and verify delivery from the backend environment.
-6. Set `FRONTEND_URL` to the exact browser origin(s) that should be allowed. Production CORS does not allow arbitrary Vercel subdomains.
+6. Set `FRONTEND_URL` to the exact browser origin(s) that should be allowed. Production CORS does not allow arbitrary Vercel subdomains. Local HTTP origins on `localhost`, `127.0.0.1`, and `[::1]` are allowed on any port for local frontend development.
 7. Set a strong unique `SESSION_SECRET`. Production startup fails if it is absent.
 8. Set a strong `CRON_SECRET` if using the room-email cron endpoint. Never make a production cron endpoint unauthenticated.
 9. Configure `NODE_ENV` for the deployment environment. Keep secrets in host secret settings and not in frontend `VITE_*` settings.
