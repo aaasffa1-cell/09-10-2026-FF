@@ -11,7 +11,8 @@
     "db:status": "node src/database/migrationStatus.js",
     "db:seed": "node src/database/seed.js",
     "email:verify": "node src/test/emailConnectionTest.js",
-    "test:payments": "node --test src/test/paymentServiceTest.js"
+    "test:payments": "node --test src/test/paymentServiceTest.js",
+    "test:auth-rooms": "node --test src/test/customerAuthAndRoomsTest.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

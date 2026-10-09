@@ -12,6 +12,7 @@ const registrationRoutes = require('./routes/registrationRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const contactRoutes = require('./routes/contactRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -98,6 +99,7 @@ app.all('/api/cron/check-rooms', async (req, res) => {
 
 // Mount Routes
 app.use('/api/tournaments', tournamentRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/registrations', registrationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);

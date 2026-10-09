@@ -1,17 +1,38 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getStoredAdmin, adminLogout } from '../services/api';
-import { Flame, Shield, Trophy, PhoneCall, LogIn, LogOut, Menu, X, Swords } from 'lucide-react';
+import { Flame, Shield, Trophy, PhoneCall, LogIn, LogOut, Menu, X, Swords, UserRound } from 'lucide-react';
+import { getUserProfile, logoutUser } from '../services/api';
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const admin = getStoredAdmin();
+  const [user, setUser] = useState(null);
+
+  React.useEffect(() => {
+    let active = true;
+    getUserProfile().then((profile) => {
+      if (active) setUser(profile);
+    }).catch(() => {
+      if (active) setUser(null);
+    });
+    return () => { active = false; };
+  }, [location.pathname]);
 
   const handleLogout = () => {
     adminLogout();
     navigate('/admin/login');
+  };
+
+  const handleUserLogout = async () => {
+    try {
+      await logoutUser();
+    } finally {
+      setUser(null);
+      navigate('/login');
+    }
   };
 
   const isActive = (path) => {
@@ -136,6 +157,16 @@ export default function Navbar() {
               </button>
             </div>
           ) : null}
+          {user ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 10 }}>
+              <Link to="/dashboard" className="btn btn-secondary btn-sm"><UserRound size={15} /> MY ACCOUNT</Link>
+              <button onClick={handleUserLogout} className="btn btn-secondary btn-sm" title="Sign out"><LogOut size={14} /></button>
+            </div>
+          ) : (
+            <Link to="/login" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }}>
+              <LogIn size={15} /> SIGN IN
+            </Link>
+          )}
         </div>
 
         {/* Mobile Hamburger Toggle */}
@@ -219,22 +250,19 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <Link
-                to="/admin/login"
-                onClick={() => setMobileMenuOpen(false)}
-                style={{
-                  marginTop: '10px',
-                  textAlign: 'center',
-                  fontSize: '12px',
-                  color: 'var(--text-dim)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                <LogIn size={13} /> Admin Login
-              </Link>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {user ? (
+                  <>
+                    <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className="btn btn-secondary">My tournament account</Link>
+                    <button onClick={() => { handleUserLogout(); setMobileMenuOpen(false); }} className="btn btn-secondary"><LogOut size={16} /> Sign out</button>
+                  </>
+                ) : (
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="btn btn-secondary"><LogIn size={16} /> Sign in / Register</Link>
+                )}
+                <Link to="/admin/login" onClick={() => setMobileMenuOpen(false)} style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-dim)' }}>
+                  <LogIn size={13} /> Admin Login
+                </Link>
+              </div>
             )}
           </div>
         </div>

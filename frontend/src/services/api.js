@@ -60,6 +60,34 @@ export async function fetchTournamentById(id) {
   return data.tournament;
 }
 
+export async function requestUserOtp(email) {
+  return request('/auth/request-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyUserOtp(email, otp) {
+  return request('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+export async function getUserProfile() {
+  const data = await request('/auth/me');
+  return data.user;
+}
+
+export async function logoutUser() {
+  return request('/auth/logout', { method: 'POST' });
+}
+
+export async function fetchUserDashboard() {
+  const data = await request('/auth/dashboard');
+  return data.registrations || [];
+}
+
 export async function submitSquadRegistration(payload) {
   return request('/registrations', {
     method: 'POST',
@@ -219,7 +247,10 @@ export async function fetchAdminPayments(filters = {}) {
 }
 
 export async function verifyAdminPayment(paymentId) {
-  return request(`/admin/payments/${paymentId}/verify`, { method: 'POST' });
+  return request(`/admin/payments/${paymentId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ confirmPaymentReceived: true }),
+  });
 }
 
 export async function rejectAdminPayment(paymentId, reason) {
@@ -231,7 +262,12 @@ export async function rejectAdminPayment(paymentId, reason) {
 
 export async function fetchRoomCredentials(tournamentId) {
   const data = await request(`/admin/tournaments/${tournamentId}/room`);
-  return data.roomCredentials;
+  return {
+    ...(data.roomCredentials || {}),
+    hasCredentials: data.hasCredentials,
+    sendWindow: data.sendWindow,
+    deliveries: data.deliveries || [],
+  };
 }
 
 export async function saveRoomCredentials(tournamentId, payload) {

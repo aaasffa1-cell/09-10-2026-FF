@@ -24,6 +24,9 @@ async function recordOtpEmailAttempt(registrationId, tournamentId, email, status
 // POST /api/registrations - Step 1: Submit Squad & Generate OTP
 async function createRegistration(req, res) {
   const { tournamentId, captainName, captainEmail, captainPhone, captainFreeFireId, players } = req.body;
+  if (String(req.user.email).toLowerCase() !== String(captainEmail).toLowerCase()) {
+    return res.status(403).json({ success: false, error: 'Register using the email address you signed in with.' });
+  }
 
   let client;
   let registrationId;
@@ -51,37 +54,18 @@ async function createRegistration(req, res) {
     }
 
     const occupiedSlotsRes = await client.query(
-      `SELECT r.status, r.reservation_expires_at,
-              (p.id IS NOT NULL) AS has_submitted_utr
-       FROM registrations r
-       LEFT JOIN payments p
-         ON p.registration_id = r.id
-        AND p.provider = 'manual_upi'
-        AND p.status = 'UTR_SUBMITTED'
-       WHERE r.tournament_id = $1`,
+      `SELECT COUNT(*)::int AS count FROM registrations
+       WHERE tournament_id = $1 AND status = 'CONFIRMED'`,
       [tournamentId]
     );
-    const activeReservationStatuses = new Set([
-      'PENDING',
-      'OTP_VERIFIED',
-      'PAYMENT_PENDING',
-      'PAYMENT_PROCESSING',
-      'PAYMENT_FAILED',
-    ]);
-    const occupiedSlots = occupiedSlotsRes.rows.filter((row) => (
-      row.status === 'CONFIRMED' ||
-      row.has_submitted_utr === true ||
-      (activeReservationStatuses.has(row.status) &&
-        row.reservation_expires_at &&
-        new Date(row.reservation_expires_at) > new Date())
-    )).length;
-    if (occupiedSlots >= Number(tournament.max_slots)) {
+    const squadCapacity = Math.min(Number(tournament.max_slots), 13);
+    if (occupiedSlotsRes.rows[0].count >= squadCapacity) {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: 'All slots for this tournament are full.' });
     }
 
     // 2. Prevent parallel duplicate registrations by reserving against the locked tournament row.
-    const existingConfirmed = await client.query(
+    const existingRegistration = await client.query(
       `SELECT r.id FROM registrations r
        LEFT JOIN payments p
          ON p.registration_id = r.id
@@ -90,16 +74,15 @@ async function createRegistration(req, res) {
        WHERE r.tournament_id = $1 AND r.captain_email = $2
          AND (
            r.status = 'CONFIRMED'
-           OR (
-             r.status IN ('PENDING', 'OTP_VERIFIED', 'PAYMENT_PENDING', 'PAYMENT_PROCESSING', 'PAYMENT_FAILED')
-             AND r.reservation_expires_at > $3
-           )
+           OR (r.status IN ('PENDING', 'OTP_VERIFIED', 'PAYMENT_PENDING', 'PAYMENT_PROCESSING', 'PAYMENT_FAILED')
+               AND r.reservation_expires_at > CURRENT_TIMESTAMP)
+           OR (r.status = 'REJECTED' AND r.reservation_expires_at > CURRENT_TIMESTAMP)
            OR p.id IS NOT NULL
          )`,
-      [tournamentId, captainEmail, new Date()]
+      [tournamentId, captainEmail]
     );
 
-    if (existingConfirmed.rows.length > 0) {
+    if (existingRegistration.rows.length > 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         success: false, 
@@ -112,7 +95,7 @@ async function createRegistration(req, res) {
       `INSERT INTO registrations
          (tournament_id, captain_name, captain_email, captain_phone, status, email_verified, payment_status,
           public_access_token_hash, reservation_expires_at)
-       VALUES ($1, $2, $3, $4, 'PENDING', FALSE, 'PENDING', $5, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
+       VALUES ($1, $2, $3, $4, 'OTP_VERIFIED', TRUE, 'PENDING', $5, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
        RETURNING id, tournament_id, captain_name, captain_email, captain_phone, status, created_at`,
       [tournamentId, captainName, captainEmail, captainPhone, access.tokenHash]
     );
@@ -139,31 +122,13 @@ async function createRegistration(req, res) {
 
     await client.query('COMMIT');
 
-    // 5. Generate and send 6-digit OTP to Captain Email
-    const otpResult = await createOtpForRegistration(registrationId, captainEmail);
-
-    try {
-      const mailResult = await sendOtpEmail(captainEmail, otpResult.otp, tournament.name, captainName);
-      await recordOtpEmailAttempt(registrationId, tournamentId, captainEmail, 'SENT', mailResult.messageId);
-    } catch (emailErr) {
-      console.error('[RegistrationController] OTP email delivery failed:', emailErr);
-      await recordOtpEmailAttempt(registrationId, tournamentId, captainEmail, 'FAILED', null, emailErr.message);
-      return res.status(502).json({
-        success: false,
-        registrationId,
-        registrationToken: access.token,
-        error: 'Your squad was saved, but the OTP email could not be sent. Please use Resend OTP to try again.',
-      });
-    }
-
     return res.status(201).json({
       success: true,
       registrationId,
       registrationToken: access.token,
-      status: 'PENDING',
+      status: 'OTP_VERIFIED',
       captainEmail,
-      devOtp: process.env.NODE_ENV !== 'production' ? otpResult.otp : undefined,
-      message: `Squad registration initiated. A 6-digit verification OTP has been sent to ${captainEmail}.`,
+      message: 'Squad details saved. Your signed-in email is verified; continue to the UPI payment step.',
     });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

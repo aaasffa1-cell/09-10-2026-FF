@@ -9,9 +9,10 @@ const {
 const { validateRegistrationInput } = require('../middleware/validateMiddleware');
 const { otpRequestLimiter, otpVerifyLimiter } = require('../middleware/rateLimiter');
 const { requireRegistrationAccess } = require('../middleware/registrationAccessMiddleware');
+const { requireUserAuth } = require('../middleware/userAuthMiddleware');
 
 // Step 1: Submit squad details and generate OTP
-router.post('/', otpRequestLimiter, validateRegistrationInput, createRegistration);
+router.post('/', requireUserAuth, otpRequestLimiter, validateRegistrationInput, createRegistration);
 
 // Step 1b: Resend OTP
 router.post('/:id/send-otp', otpRequestLimiter, requireRegistrationAccess, sendOtp);

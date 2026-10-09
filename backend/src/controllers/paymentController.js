@@ -136,8 +136,15 @@ async function verifyPayment(req, res) {
   if (!Number.isSafeInteger(paymentId) || paymentId < 1) {
     return res.status(400).json({ success: false, error: 'A valid payment ID is required.' });
   }
+  if (req.body?.confirmPaymentReceived !== true) {
+    return res.status(400).json({
+      success: false,
+      error: 'Confirm that the actual payment is visible in the receiving account before approving.',
+      code: 'PAYMENT_RECEIPT_CONFIRMATION_REQUIRED',
+    });
+  }
   try {
-    const result = await reviewPayment(paymentId, req.admin.id, 'verify');
+    const result = await reviewPayment(paymentId, req.admin.id, 'verify', '', true);
     await sendPaymentConfirmation(result.registrationId);
     return res.json({
       success: true,

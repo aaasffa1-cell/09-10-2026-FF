@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, PhoneCall, MessageSquare, Send, CheckCircle2, Headphones, HelpCircle } from 'lucide-react';
+import { Mail, MessageSquare, Send, CheckCircle2, HelpCircle } from 'lucide-react';
 import { submitContactMessage } from '../services/api';
 
 export default function Contact() {
@@ -71,13 +71,13 @@ export default function Contact() {
             <div>
               <h3 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px' }}>EMAIL SUPPORT</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Official inquiry inbox</p>
-              <a href="mailto:support@freefirearena.com" style={{ fontSize: '14px', color: 'var(--accent-orange)', fontWeight: 700 }}>
-                support@freefirearena.com
+              <a href="mailto:aasffa1@gmail.com" style={{ fontSize: '14px', color: 'var(--accent-orange)', fontWeight: 700 }}>
+                aasffa1@gmail.com
               </a>
             </div>
           </div>
 
-          {/* WhatsApp / Phone Support */}
+          {/* Telegram Support */}
           <div className="ffa-card" style={{ padding: '25px', display: 'flex', gap: '16px' }}>
             <div style={{
               width: '45px',
@@ -90,40 +90,17 @@ export default function Contact() {
               justifyContent: 'center',
               flexShrink: 0,
             }}>
-              <PhoneCall size={22} />
-            </div>
-            <div>
-              <h3 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px' }}>WHATSAPP HELPDESK</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Direct match coordinator</p>
-              <div style={{ fontSize: '14px', color: 'var(--accent-green)', fontWeight: 700 }}>
-                +91 98765 43210 (10 AM - 11 PM IST)
-              </div>
-            </div>
-          </div>
-
-          {/* Discord Community */}
-          <div className="ffa-card" style={{ padding: '25px', display: 'flex', gap: '16px' }}>
-            <div style={{
-              width: '45px',
-              height: '45px',
-              borderRadius: '10px',
-              background: 'rgba(0, 255, 204, 0.15)',
-              color: 'var(--accent-cyan)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}>
               <MessageSquare size={22} />
             </div>
             <div>
-              <h3 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px' }}>DISCORD COMMUNITY</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Match announcements & results</p>
-              <span style={{ fontSize: '14px', color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                discord.gg/freefirearena
-              </span>
+              <h3 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px' }}>TELEGRAM SUPPORT</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Message the tournament coordinator</p>
+              <a href="https://t.me/gaiusmorgan901" target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: 'var(--accent-green)', fontWeight: 700 }}>
+                @gaiusmorgan901
+              </a>
             </div>
           </div>
+
         </div>
 
         {/* FAQs */}
@@ -139,7 +116,7 @@ export default function Contact() {
                 When and how do I receive the Room ID and Password?
               </h4>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6' }}>
-                Our automated server dispatches the Custom Room ID and Password directly to your verified Captain email address exactly <strong>10 minutes before the match start time</strong>. Please check your Inbox and Spam/Promotions folder.
+                Our automated server dispatches the Custom Room ID and Password to the captain's verified email in the configured 10-minute pre-match window. Please check your Inbox and Spam/Promotions folder.
               </p>
             </div>
 
@@ -157,7 +134,7 @@ export default function Contact() {
                 Can I edit or substitute a player after registration?
               </h4>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6' }}>
-                Player changes can be requested via WhatsApp Support up to 1 hour before match start time by providing your Squad ID and registered captain email.
+                Player changes can be requested via Telegram support up to 1 hour before match start time by providing your squad number and registered captain email.
               </p>
             </div>
           </div>

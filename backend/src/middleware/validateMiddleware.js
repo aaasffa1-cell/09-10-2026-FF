@@ -100,8 +100,8 @@ function validateTournamentInput(req, res, next) {
     errors.push('Squad size must be 4 for standard squad BR tournaments.');
   }
 
-  if (maxSlots !== undefined && (isNaN(parseInt(maxSlots, 10)) || parseInt(maxSlots, 10) < 1 || parseInt(maxSlots, 10) > 100)) {
-    errors.push('Maximum slots must be between 1 and 100 squads.');
+  if (maxSlots !== undefined && (isNaN(parseInt(maxSlots, 10)) || parseInt(maxSlots, 10) < 1 || parseInt(maxSlots, 10) > 13)) {
+    errors.push('Maximum capacity is 13 squads (52 players).');
   }
 
   if (errors.length > 0) {

@@ -14,19 +14,19 @@ Root `vercel.json` rewrites `/api/*` to the serverless Express adapter and other
 
 1. Create a staging PostgreSQL database and set `DATABASE_URL` in the staging backend environment.
 2. Back up any existing database before schema changes.
-3. Check migration history with `npm run db:status`; apply the migration with `npm run db:setup` only after confirming the target URL.
+3. Check migration history with `npm run db:status`; apply migrations through `0004_customer_auth_and_squads` with `npm run db:setup` only after confirming the target URL. This adds hashed OTP/session tables and squad numbering; the migration stops for manual review if existing tournaments exceed 13 confirmed squads.
 4. Create the initial admin account using backend-only `ADMIN_EMAIL` and `ADMIN_PASSWORD`. These are synchronized into the database during setup/startup; do not use documented/default credentials.
 5. Configure SMTP and verify delivery from the backend environment.
 6. Set `FRONTEND_URL` to the exact browser origin(s) that should be allowed. Production CORS does not allow arbitrary Vercel subdomains. Local HTTP origins on `localhost`, `127.0.0.1`, and `[::1]` are allowed on any port for local frontend development.
 7. Set a strong unique `SESSION_SECRET`. Production startup fails if it is absent.
-8. Set a strong `CRON_SECRET` if using the room-email cron endpoint. Never make a production cron endpoint unauthenticated.
+8. Set `ROOM_EMAIL_LEAD_MINUTES=10` for the 7:50 PM send target for an 8:00 PM match. Set a strong `CRON_SECRET` and schedule a protected request to `/api/cron/check-rooms` at least once per minute; Vercel serverless does not keep the in-process Node-Cron worker alive between invocations. Never make a production cron endpoint unauthenticated.
 9. Configure `NODE_ENV` for the deployment environment. Keep secrets in host secret settings and not in frontend `VITE_*` settings.
 
 ## Environment variable names
 
 Backend/serverless variables:
 
-`DATABASE_URL`, `DB_SSL`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`, `SUPPORT_EMAIL`, `CRON_SECRET`, `FRONTEND_URL`, `NODE_ENV`, `TZ`, `PORT`, `UPI_ID`, `UPI_DISPLAY_NAME`, `REGISTRATION_FEE`, `CURRENCY`.
+`DATABASE_URL`, `DB_SSL`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`, `SUPPORT_EMAIL`, `CRON_SECRET`, `ROOM_EMAIL_LEAD_MINUTES`, `FRONTEND_URL`, `NODE_ENV`, `TZ`, `PORT`, `UPI_ID`, `UPI_DISPLAY_NAME`, `REGISTRATION_FEE`, `CURRENCY`.
 
 Frontend variable:
 
@@ -55,7 +55,9 @@ On a staging deployment, verify:
 - Payment order creation reports provider unavailability until a real adapter exists; no fake payment success appears.
 - Admin login uses an HttpOnly cookie and returns a bearer token for cross-origin frontend/backend deployments; admin-only APIs reject missing/invalid authentication.
 - Registration/payment history and room management load with admin authentication.
-- SMTP and the protected room-email cron work in the target deployment.
+- Email OTP login, expiry, replay protection, and dashboard isolation work in the target deployment.
+- SMTP failure is recorded, failed room delivery can be retried during the window, and pending/rejected squads receive no credentials.
+- Manual room sending is rejected outside the ten-minute pre-match window; verify the external scheduler independently of an open dashboard.
 - Database migration history/data is correct and logs contain no secrets.
 
-Before production launch, back up PostgreSQL, apply migration `0003_manual_upi_review` to staging, verify the UPI ID belongs to the intended receiving account, and test manual admin review with a real ₹40 transfer.
+Before production launch, back up PostgreSQL, apply migration `0004_customer_auth_and_squads` to staging, verify the UPI ID belongs to the intended receiving account, and test manual admin review with a real ₹40 transfer.

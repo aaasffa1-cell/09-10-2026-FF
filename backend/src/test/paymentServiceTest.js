@@ -5,6 +5,7 @@ const path = require('node:path');
 const { newDb } = require('pg-mem');
 const db = require('../database/db');
 const { migratePaymentSchema, migrateManualUpiReview } = require('../database/paymentMigration');
+const { migrateCustomerAuthAndSquads } = require('../database/customerAuthAndSquadsMigration');
 
 let testPool;
 db.getClient = () => testPool.connect();
@@ -36,6 +37,7 @@ async function createTestDatabase() {
   await migratePaymentSchema(testPool);
   await migrateManualUpiReview(testPool);
   await migrateManualUpiReview(testPool);
+  await migrateCustomerAuthAndSquads(testPool);
   const admin = await testPool.query(
     `INSERT INTO admins (email, password_hash) VALUES ('admin@example.com', 'test-hash') RETURNING id`
   );
@@ -168,15 +170,19 @@ test('only admin review verifies or rejects, and review plus registration update
   await submitUtr(rejectedRegistrationId, '112233445566');
 
   const verifiedPayment = await testPool.query(`SELECT id FROM payments WHERE registration_id = $1`, [verifiedRegistrationId]);
-  const verified = await reviewPayment(verifiedPayment.rows[0].id, 1, 'verify');
+  await assert.rejects(reviewPayment(verifiedPayment.rows[0].id, 1, 'verify'), (error) => (
+    error instanceof ManualPaymentError && error.code === 'PAYMENT_RECEIPT_CONFIRMATION_REQUIRED'
+  ));
+  const verified = await reviewPayment(verifiedPayment.rows[0].id, 1, 'verify', '', true);
   assert.equal(verified.status, 'VERIFIED');
+  assert.equal(verified.squadNumber, 1);
   const confirmedRegistration = await testPool.query(
     `SELECT status, payment_status FROM registrations WHERE id = $1`,
     [verifiedRegistrationId]
   );
   assert.equal(confirmedRegistration.rows[0].status, 'CONFIRMED');
   assert.equal(confirmedRegistration.rows[0].payment_status, 'VERIFIED');
-  await assert.rejects(reviewPayment(verifiedPayment.rows[0].id, 1, 'verify'), (error) => (
+  await assert.rejects(reviewPayment(verifiedPayment.rows[0].id, 1, 'verify', '', true), (error) => (
     error instanceof ManualPaymentError && error.code === 'PAYMENT_NOT_REVIEWABLE'
   ));
 
@@ -194,6 +200,7 @@ test('only admin review verifies or rejects, and review plus registration update
 
   const rejected = await reviewPayment(rejectedPayment.rows[0].id, 1, 'reject', 'UTR does not match payment');
   assert.equal(rejected.status, 'REJECTED');
+  assert.equal(rejected.squadNumber, null);
   const rejectedRow = await testPool.query(
     `SELECT id, registration_id, status FROM payments WHERE id = $1`,
     [rejectedPayment.rows[0].id]
@@ -242,6 +249,69 @@ test('registration must contain exactly four players and the stored tournament f
      VALUES ($1, $2, 'bad-amount', 10, 'INR', 'PENDING', 'UPI_QR', 'manual_upi')`,
     [wrongFeeRegistration, tournament.rows[0].id]
   ));
+  await testPool.end();
+});
+
+test('concurrent payment confirmations receive unique ordered squad numbers and stop at capacity', async () => {
+  await createTestDatabase();
+  await testPool.query(`UPDATE tournaments SET max_slots = 2 WHERE id = 1`);
+  const registrationIds = [];
+  const paymentIds = [];
+  for (const captain of ['Captain Capacity One', 'Captain Capacity Two', 'Captain Capacity Three']) {
+    const registrationId = await createRegistration(1, captain);
+    registrationIds.push(registrationId);
+    await createPaymentRequest(registrationId);
+    await submitUtr(registrationId, `${String(registrationId).padStart(10, '0')}`);
+    const payment = await testPool.query(`SELECT id FROM payments WHERE registration_id = $1`, [registrationId]);
+    paymentIds.push(payment.rows[0].id);
+  }
+
+  const confirmations = await Promise.all([
+    reviewPayment(paymentIds[0], 1, 'verify', '', true),
+    reviewPayment(paymentIds[1], 1, 'verify', '', true),
+  ]);
+  assert.deepEqual(confirmations.map((result) => result.squadNumber).sort(), [1, 2]);
+  const assignments = await testPool.query(
+    `SELECT squad_number FROM registrations WHERE id = $1 OR id = $2 ORDER BY squad_number`,
+    [registrationIds[0], registrationIds[1]]
+  );
+  assert.deepEqual(assignments.rows.map((row) => row.squad_number), [1, 2]);
+  await assert.rejects(reviewPayment(paymentIds[2], 1, 'verify', '', true), (error) => (
+    error instanceof ManualPaymentError && error.code === 'TOURNAMENT_CAPACITY_FULL'
+  ));
+  const pending = await testPool.query(`SELECT status, squad_number FROM registrations WHERE id = $1`, [registrationIds[2]]);
+  assert.equal(pending.rows[0].status, 'PAYMENT_PENDING');
+  assert.equal(pending.rows[0].squad_number, null);
+  await testPool.end();
+});
+
+test('13 verified four-player squads fill exactly 52 player slots', async () => {
+  await createTestDatabase();
+  const registrationIds = [];
+  const paymentIds = [];
+  for (let squad = 1; squad <= 14; squad += 1) {
+    const registrationId = await createRegistration(1, `Capacity Squad ${squad}`);
+    registrationIds.push(registrationId);
+    await createPaymentRequest(registrationId);
+    await submitUtr(registrationId, `UTR${String(squad).padStart(9, '0')}`);
+    const payment = await testPool.query(`SELECT id FROM payments WHERE registration_id = $1`, [registrationId]);
+    paymentIds.push(payment.rows[0].id);
+  }
+  const assigned = [];
+  for (let index = 0; index < 13; index += 1) {
+    const result = await reviewPayment(paymentIds[index], 1, 'verify', '', true);
+    assigned.push(result.squadNumber);
+  }
+  assert.deepEqual(assigned, Array.from({ length: 13 }, (_unused, index) => index + 1));
+  await assert.rejects(reviewPayment(paymentIds[13], 1, 'verify', '', true), (error) => (
+    error instanceof ManualPaymentError && error.code === 'TOURNAMENT_CAPACITY_FULL'
+  ));
+  const playerCount = await testPool.query(
+    `SELECT COUNT(*) AS count FROM players p
+     JOIN registrations r ON r.id = p.registration_id
+     WHERE r.tournament_id = 1 AND r.status = 'CONFIRMED'`
+  );
+  assert.equal(Number(playerCount.rows[0].count), 52);
   await testPool.end();
 });
 

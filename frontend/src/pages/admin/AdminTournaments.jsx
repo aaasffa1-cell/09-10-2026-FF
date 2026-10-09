@@ -36,7 +36,7 @@ export default function AdminTournaments() {
   const [entryFee, setEntryFee] = useState(40);
   const [prizeAmount, setPrizeAmount] = useState(300);
   const [squadSize, setSquadSize] = useState(4);
-  const [maxSlots, setMaxSlots] = useState(25);
+  const [maxSlots, setMaxSlots] = useState(13);
   const [rules, setRules] = useState('');
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -414,7 +414,7 @@ export default function AdminTournaments() {
                       type="number"
                       required
                       min={editingTournament ? editingTournament.confirmedSlots : 1}
-                      max="100"
+                      max="13"
                       className="form-input"
                       value={maxSlots}
                       onChange={(e) => setMaxSlots(e.target.value)}

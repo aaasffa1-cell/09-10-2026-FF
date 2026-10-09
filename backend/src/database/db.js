@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { migratePaymentSchema, migrateManualUpiReview } = require('./paymentMigration');
+const { migrateCustomerAuthAndSquads } = require('./customerAuthAndSquadsMigration');
 
 let pool = null;
 let isInMemory = false;
@@ -177,6 +178,12 @@ async function runMigrations() {
       await migrateManualUpiReview(client);
       await client.query(
         `INSERT INTO schema_migrations (version) VALUES ('0003_manual_upi_review')`
+      );
+    }
+    if (!appliedVersions.has('0004_customer_auth_and_squads')) {
+      await migrateCustomerAuthAndSquads(client);
+      await client.query(
+        `INSERT INTO schema_migrations (version) VALUES ('0004_customer_auth_and_squads')`
       );
     }
 

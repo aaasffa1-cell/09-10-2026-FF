@@ -27,7 +27,7 @@ const otpRequestLimiter = rateLimit({
 // OTP Verify rate limiter (max 10 verify calls per 10 minutes)
 const otpVerifyLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 15,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

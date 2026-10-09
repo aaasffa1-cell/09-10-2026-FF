@@ -3,7 +3,7 @@ const { query } = require('../database/db');
 // Helper to compute tournament registration status
 function computeTournamentStatus(t) {
   const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-  const maxSlots = parseInt(t.max_slots || '25', 10);
+  const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
 
   if (!t.registration_open) {
     return 'REGISTRATION_CLOSED';
@@ -46,7 +46,7 @@ async function getAllTournaments(req, res) {
 
     const tournaments = result.rows.map(t => {
       const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-      const maxSlots = parseInt(t.max_slots || '25', 10);
+      const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
       const status = computeTournamentStatus(t);
 
       return {
@@ -119,7 +119,7 @@ async function getTournamentById(req, res) {
 
     const t = result.rows[0];
     const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-    const maxSlots = parseInt(t.max_slots || '25', 10);
+    const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
     const status = computeTournamentStatus(t);
 
     return res.json({

@@ -9,7 +9,7 @@ SELECT
   40.00,
   300.00,
   4,
-  25,
+  13,
   '1. Exactly 4 players per squad.\n2. Emulators and iPad/tablets are strictly prohibited (Mobile only).\n3. Gun attributes are disabled.\n4. Character skills are allowed.\n5. Room ID and password will be sent to the captain verified email 10 minutes before the match.\n6. All players must enter the assigned slot on time. Late entries forfeit their entry.',
   TRUE
 WHERE NOT EXISTS (SELECT 1 FROM tournaments WHERE name = 'FREE FIRE BR #1');
@@ -24,7 +24,7 @@ SELECT
   40.00,
   300.00,
   4,
-  25,
+  13,
   '1. Mobile devices only.\n2. Toxic behavior, stream sniping or cheating results in permanent ban and prize forfeiture.\n3. Room credentials sent 10 minutes before start time.\n4. Screenshot of final match standings required for verification.',
   TRUE
 WHERE NOT EXISTS (SELECT 1 FROM tournaments WHERE name = 'FREE FIRE BR PRO SHOWDOWN');
@@ -39,7 +39,7 @@ SELECT
   40.00,
   300.00,
   4,
-  25,
+  13,
   '1. 4 Players squad battle royale.\n2. Strict anti-cheat monitoring in effect.\n3. Verified captain email receives room credentials 10 mins prior.',
   TRUE
 WHERE NOT EXISTS (SELECT 1 FROM tournaments WHERE name = 'FREE FIRE WEEKEND CLASH');

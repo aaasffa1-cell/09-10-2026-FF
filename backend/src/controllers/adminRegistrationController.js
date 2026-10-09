@@ -15,6 +15,7 @@ async function getRegistrations(req, res) {
         r.status,
         r.email_verified,
         r.payment_status,
+        r.squad_number,
         r.created_at,
         r.updated_at,
         t.name as tournament_name,

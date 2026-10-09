@@ -311,7 +311,7 @@ async function submitUtr(registrationId, suppliedUtr) {
     if (registration.status === 'CONFIRMED') {
       throw new ManualPaymentError('This team is already confirmed.', 'ALREADY_REGISTERED', 409);
     }
-    if (!['PAYMENT_PENDING'].includes(registration.status)) {
+    if (!['PAYMENT_PENDING', 'REJECTED'].includes(registration.status)) {
       throw new ManualPaymentError('This registration is not awaiting payment.', 'REGISTRATION_NOT_ELIGIBLE', 409);
     }
     if (!registration.reservation_expires_at ||
@@ -368,7 +368,7 @@ async function submitUtr(registrationId, suppliedUtr) {
   }
 }
 
-async function reviewPayment(paymentId, adminId, action, reason = '') {
+async function reviewPayment(paymentId, adminId, action, reason = '', actualPaymentReceived = false) {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -392,7 +392,7 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
       [registrationInfo.rows[0].tournament_id]
     );
     const registrationResult = await client.query(
-      `SELECT id, tournament_id, status
+      `SELECT id, tournament_id, status, email_verified
        FROM registrations WHERE id = $1 FOR UPDATE`,
       [payment.registration_id]
     );
@@ -412,12 +412,23 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
     if (Number(playerCount.rows[0].player_count) !== 4) {
       throw new ManualPaymentError('The registration does not contain exactly four players.', 'INVALID_REGISTRATION', 409);
     }
+    if (!registration.email_verified) {
+      throw new ManualPaymentError('The captain email must be verified before payment approval.', 'EMAIL_NOT_VERIFIED', 409);
+    }
 
     let newStatus;
     let newRegistrationStatus;
     let newRegistrationPaymentStatus;
     let rejectionReason = null;
+    let squadNumber = null;
     if (action === 'verify') {
+      if (actualPaymentReceived !== true) {
+        throw new ManualPaymentError(
+          'Confirm that the payment is visible in the receiving account before approving.',
+          'PAYMENT_RECEIPT_CONFIRMATION_REQUIRED',
+          400
+        );
+      }
       const duplicate = await client.query(
         `SELECT id FROM payments WHERE LOWER(utr) = LOWER($1) AND id <> $2 LIMIT 1`,
         [payment.utr, payment.id]
@@ -425,6 +436,34 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
       if (duplicate.rows.length) {
         throw new ManualPaymentError('This UTR is already linked to another payment.', 'DUPLICATE_UTR', 409);
       }
+      const capacityResult = await client.query(
+        `SELECT LEAST(max_slots, 13)::int AS capacity, next_squad_number
+         FROM tournaments WHERE id = $1`,
+        [registration.tournament_id]
+      );
+      const capacity = capacityResult.rows[0].capacity;
+      if (capacityResult.rows[0].next_squad_number > capacity) {
+        throw new ManualPaymentError(
+          `Tournament capacity is full (${capacity} squads). This payment cannot be confirmed.`,
+          'TOURNAMENT_CAPACITY_FULL',
+          409
+        );
+      }
+      const allocated = await client.query(
+        `UPDATE tournaments
+         SET next_squad_number = next_squad_number + 1
+        WHERE id = $1 AND next_squad_number <= $2
+         RETURNING next_squad_number - 1 AS squad_number`,
+        [registration.tournament_id, capacity]
+      );
+      if (!allocated.rows.length) {
+        throw new ManualPaymentError(
+          'Another payment confirmation was processed at the same time. Refresh and retry.',
+          'SQUAD_ALLOCATION_CONFLICT',
+          409
+        );
+      }
+      squadNumber = allocated.rows[0].squad_number;
       newStatus = 'VERIFIED';
       newRegistrationStatus = 'CONFIRMED';
       newRegistrationPaymentStatus = 'VERIFIED';
@@ -434,7 +473,7 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
         throw new ManualPaymentError('Enter a rejection reason between 3 and 500 characters.', 'INVALID_REJECTION_REASON');
       }
       newStatus = 'REJECTED';
-      newRegistrationStatus = 'PAYMENT_PENDING';
+      newRegistrationStatus = 'REJECTED';
       newRegistrationPaymentStatus = 'REJECTED';
     } else {
       throw new ManualPaymentError('Invalid payment review action.', 'INVALID_REVIEW_ACTION');
@@ -450,12 +489,12 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
     );
     await client.query(
       `UPDATE registrations
-       SET status = $1, payment_status = $2,
+       SET status = $1, payment_status = $2, squad_number = $4,
            reservation_expires_at = CASE WHEN $2 = 'REJECTED'
              THEN CURRENT_TIMESTAMP + INTERVAL '15 minutes' ELSE NULL END,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3`,
-      [newRegistrationStatus, newRegistrationPaymentStatus, registration.id]
+      [newRegistrationStatus, newRegistrationPaymentStatus, registration.id, squadNumber]
     );
     await appendPaymentEvent(client, payment.id, `PAYMENT_${newStatus}`, {
       previousStatus: 'UTR_SUBMITTED',
@@ -464,7 +503,7 @@ async function reviewPayment(paymentId, adminId, action, reason = '') {
       rejectionReason,
     });
     await client.query('COMMIT');
-    return { paymentId: payment.id, registrationId: registration.id, status: newStatus };
+    return { paymentId: payment.id, registrationId: registration.id, status: newStatus, squadNumber };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -492,7 +531,8 @@ async function getAdminPayments({ status, search, sort } = {}) {
   }
   const direction = sort === 'oldest' ? 'ASC' : 'DESC';
   const result = await query(
-    `SELECT p.id AS payment_id, p.registration_id, r.captain_name,
+    `SELECT p.id AS payment_id, p.registration_id, r.captain_name, r.status AS registration_status,
+            r.squad_number, t.date AS tournament_date, t.start_time AS tournament_start_time,
             t.name AS tournament_name, p.amount, p.currency, p.payment_method,
             p.utr, p.status, p.submitted_at, p.verified_at, p.rejection_reason,
             p.created_at, a.email AS reviewed_by_email
@@ -505,6 +545,21 @@ async function getAdminPayments({ status, search, sort } = {}) {
      LIMIT 200`,
     params
   );
+  const registrationIds = result.rows.map((payment) => payment.registration_id);
+  const playersResult = registrationIds.length
+    ? await query(
+      `SELECT registration_id, player_number, full_name, free_fire_id
+       FROM players WHERE registration_id = ANY($1::int[])
+       ORDER BY registration_id, player_number`,
+      [registrationIds]
+    )
+    : { rows: [] };
+  const playersByRegistration = new Map();
+  for (const player of playersResult.rows) {
+    const players = playersByRegistration.get(player.registration_id) || [];
+    players.push(player);
+    playersByRegistration.set(player.registration_id, players);
+  }
   const summaryResult = await query(
     `SELECT COUNT(*) FILTER (WHERE status = 'UTR_SUBMITTED') AS pending,
             COUNT(*) FILTER (WHERE status = 'PENDING') AS awaiting_utr,
@@ -514,7 +569,10 @@ async function getAdminPayments({ status, search, sort } = {}) {
     [UPI_PROVIDER]
   );
   return {
-    payments: result.rows,
+    payments: result.rows.map((payment) => ({
+      ...payment,
+      players: playersByRegistration.get(payment.registration_id) || [],
+    })),
     counts: Object.fromEntries(
       Object.entries(summaryResult.rows[0] || {}).map(([key, value]) => [key, Number(value)])
     ),

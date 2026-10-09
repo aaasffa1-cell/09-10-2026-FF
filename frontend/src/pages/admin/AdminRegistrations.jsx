@@ -88,6 +88,9 @@ export default function AdminRegistrations() {
     setBusyPaymentId(payment.payment_id);
     try {
       if (action === 'verify') {
+        if (!window.confirm('Confirm that the actual payment is visible in the receiving UPI/bank account. This will confirm registration and assign the next squad number.')) {
+          return;
+        }
         await verifyAdminPayment(payment.payment_id);
       } else {
         await rejectAdminPayment(payment.payment_id, rejectionReasons[payment.payment_id] || '');
@@ -212,6 +215,14 @@ export default function AdminRegistrations() {
                       <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
                         {payment.tournament_name} · ₹{payment.amount} {payment.currency} · {payment.payment_method}
                       </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
+                        Registration: {payment.registration_status} · {payment.squad_number ? `Squad ${String(payment.squad_number).padStart(2, '0')}` : 'No confirmed squad number'} · Match {new Date(payment.tournament_date).toLocaleDateString('en-IN')} at {payment.tournament_start_time}
+                      </div>
+                      {payment.players?.length > 0 && (
+                        <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: 6 }}>
+                          Players: {payment.players.map((player) => `${player.full_name} (${player.free_fire_id})`).join(' · ')}
+                        </div>
+                      )}
                       <div style={{ color: '#ffffff', fontFamily: 'monospace', marginTop: '7px', wordBreak: 'break-all' }}>
                         UTR: {payment.utr || 'Not submitted'}
                       </div>
@@ -238,7 +249,7 @@ export default function AdminRegistrations() {
                         disabled={busyPaymentId === payment.payment_id}
                         onClick={() => handlePaymentReview(payment, 'verify')}
                       >
-                        <CheckCircle2 size={16} /> {busyPaymentId === payment.payment_id ? 'SAVING...' : 'VERIFY PAYMENT'}
+                        <CheckCircle2 size={16} /> {busyPaymentId === payment.payment_id ? 'SAVING...' : 'VERIFY PAYMENT & CONFIRM REGISTRATION'}
                       </button>
                       <input
                         className="form-input"
@@ -342,6 +353,7 @@ export default function AdminRegistrations() {
                 <option value="PAYMENT_PENDING">PAYMENT_PENDING</option>
                 <option value="PAYMENT_PROCESSING">PAYMENT_PROCESSING</option>
                 <option value="PAYMENT_FAILED">PAYMENT_FAILED</option>
+                <option value="REJECTED">REJECTED</option>
               </select>
             </div>
 

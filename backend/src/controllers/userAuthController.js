@@ -1,0 +1,237 @@
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const validator = require('validator');
+const { getClient, query } = require('../database/db');
+const { getSessionCookie } = require('../middleware/userAuthMiddleware');
+const { sendLoginOtpEmail } = require('../services/emailService');
+
+const OTP_TTL_MINUTES = 10;
+const SESSION_TTL_DAYS = 7;
+
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/',
+    maxAge: SESSION_TTL_DAYS * 24 * 60 * 60 * 1000,
+  };
+}
+
+async function requestLoginOtp(req, res) {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!validator.isEmail(email) || email.length > 255) {
+    return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+  }
+
+  try {
+    const otp = String(crypto.randomInt(100000, 1000000));
+    const otpHash = await bcrypt.hash(otp, 10);
+    const client = await getClient();
+    let rateLimited = false;
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO email_otp_rate_limits (email) VALUES ($1) ON CONFLICT (email) DO NOTHING`,
+        [email]
+      );
+      await client.query(`SELECT email FROM email_otp_rate_limits WHERE email = $1 FOR UPDATE`, [email]);
+      const recentRequests = await client.query(
+        `SELECT created_at
+         FROM email_login_otps
+         WHERE email = $1
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [email]
+      );
+      rateLimited = recentRequests.rows.filter((row) => (
+        Date.now() - new Date(row.created_at).getTime() < 15 * 60 * 1000
+      )).length >= 5;
+      if (rateLimited) {
+        await client.query('ROLLBACK');
+      } else {
+        await client.query(
+          `UPDATE email_login_otps SET consumed_at = CURRENT_TIMESTAMP
+           WHERE email = $1 AND consumed_at IS NULL`,
+          [email]
+        );
+        await client.query(
+          `INSERT INTO email_login_otps (email, otp_hash, expires_at)
+           VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
+          [email, otpHash]
+        );
+        await client.query('COMMIT');
+      }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (rateLimited) {
+      return res.status(429).json({ success: false, error: 'Too many OTP requests for this email. Try again later.' });
+    }
+
+    await sendLoginOtpEmail(email, otp);
+    return res.json({
+      success: true,
+      message: `A one-time sign-in code has been sent to ${email}.`,
+      expiresInSeconds: OTP_TTL_MINUTES * 60,
+    });
+  } catch (error) {
+    console.error('[UserAuth] OTP request/delivery failed:', error);
+    return res.status(502).json({ success: false, error: 'Unable to send the sign-in code. Please try again later.' });
+  }
+}
+
+async function verifyLoginOtp(req, res) {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+  if (!validator.isEmail(email) || !/^\d{6}$/.test(otp)) {
+    return res.status(400).json({ success: false, error: 'Enter a valid email and 6-digit code.' });
+  }
+
+  const client = await getClient();
+  let sessionToken;
+  try {
+    await client.query('BEGIN');
+    const otpResult = await client.query(
+      `SELECT id, otp_hash, expires_at, attempts, consumed_at
+       FROM email_login_otps
+       WHERE email = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [email]
+    );
+    const record = otpResult.rows[0];
+    if (!record || record.consumed_at || new Date(record.expires_at) <= new Date() || record.attempts >= 5) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'This code is invalid or expired. Request a new code.' });
+    }
+
+    await client.query(`UPDATE email_login_otps SET attempts = attempts + 1 WHERE id = $1`, [record.id]);
+    if (!(await bcrypt.compare(otp, record.otp_hash))) {
+      await client.query('COMMIT');
+      return res.status(400).json({ success: false, error: 'The code is incorrect. Check it and try again.' });
+    }
+
+    await client.query(
+      `UPDATE email_login_otps SET consumed_at = CURRENT_TIMESTAMP WHERE id = $1 AND consumed_at IS NULL`,
+      [record.id]
+    );
+    await client.query(
+      `INSERT INTO email_users (email)
+       VALUES ($1)
+       ON CONFLICT (email) DO UPDATE SET last_login_at = CURRENT_TIMESTAMP`,
+      [email]
+    );
+    sessionToken = crypto.randomBytes(32).toString('hex');
+    const sessionHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
+    await client.query(
+      `INSERT INTO user_sessions (email, token_hash, expires_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
+      [email, sessionHash]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[UserAuth] OTP verification failed:', error);
+    return res.status(500).json({ success: false, error: 'Unable to verify the sign-in code.' });
+  } finally {
+    client.release();
+  }
+
+  res.cookie('ffa_user_session', sessionToken, sessionCookieOptions());
+  return res.json({ success: true, user: { email } });
+}
+
+async function getUserProfile(req, res) {
+  return res.json({ success: true, user: { email: req.user.email } });
+}
+
+async function logoutUser(req, res) {
+  const token = getSessionCookie(req);
+  let logoutError = null;
+  try {
+    if (token) {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      await query(`DELETE FROM user_sessions WHERE token_hash = $1`, [tokenHash]);
+    }
+  } catch (error) {
+    logoutError = error;
+    console.error('[UserAuth] Session revocation failed:', error);
+  }
+  res.clearCookie('ffa_user_session', sessionCookieOptions());
+  if (logoutError) {
+    return res.status(500).json({ success: false, error: 'Session cookie cleared, but server-side session revocation failed.' });
+  }
+  return res.json({ success: true });
+}
+
+async function getUserDashboard(req, res) {
+  try {
+    const registrations = await query(
+      `SELECT r.id, r.tournament_id, r.status, r.payment_status, r.squad_number,
+              r.created_at, t.name AS tournament_name, t.date AS tournament_date,
+              t.start_time AS tournament_start_time, t.entry_fee,
+              CASE WHEN el.status IN ('EMAIL_SENT', 'SENT') THEN 'EMAIL_SENT'
+                   WHEN el.status IN ('EMAIL_FAILED', 'FAILED') THEN 'EMAIL_FAILED'
+                   WHEN el.status = 'EMAIL_PENDING' THEN 'EMAIL_PENDING'
+                   ELSE NULL END AS room_email_status
+       FROM registrations r
+       JOIN tournaments t ON t.id = r.tournament_id
+       LEFT JOIN email_logs el
+         ON el.registration_id = r.id
+        AND el.tournament_id = r.tournament_id
+        AND el.email_type = 'ROOM_CREDENTIALS'
+       WHERE LOWER(r.captain_email) = $1
+       ORDER BY r.created_at DESC`,
+      [req.user.email]
+    );
+    const ids = registrations.rows.map((registration) => registration.id);
+    const payments = ids.length
+      ? await query(
+        `SELECT registration_id, utr, submitted_at
+         FROM payments
+         WHERE registration_id = ANY($1::int[])
+         ORDER BY created_at DESC, id DESC`,
+        [ids]
+      )
+      : { rows: [] };
+    const paymentByRegistration = new Map();
+    for (const payment of payments.rows) {
+      if (!paymentByRegistration.has(payment.registration_id)) {
+        paymentByRegistration.set(payment.registration_id, payment);
+      }
+    }
+    const players = ids.length
+      ? await query(
+        `SELECT registration_id, player_number, full_name, free_fire_id
+         FROM players WHERE registration_id = ANY($1::int[])
+         ORDER BY registration_id, player_number`,
+        [ids]
+      )
+      : { rows: [] };
+    const playersByRegistration = new Map();
+    for (const player of players.rows) {
+      const team = playersByRegistration.get(player.registration_id) || [];
+      team.push(player);
+      playersByRegistration.set(player.registration_id, team);
+    }
+    return res.json({
+      success: true,
+      registrations: registrations.rows.map((registration) => ({
+        ...registration,
+        utr: paymentByRegistration.get(registration.id)?.utr || null,
+        payment_submitted_at: paymentByRegistration.get(registration.id)?.submitted_at || null,
+        players: playersByRegistration.get(registration.id) || [],
+      })),
+    });
+  } catch (error) {
+    console.error('[UserAuth] Dashboard query failed:', error);
+    return res.status(500).json({ success: false, error: 'Unable to load your tournament dashboard.' });
+  }
+}
+
+module.exports = { requestLoginOtp, verifyLoginOtp, getUserProfile, logoutUser, getUserDashboard };

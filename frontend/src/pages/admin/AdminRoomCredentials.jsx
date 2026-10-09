@@ -7,14 +7,11 @@ import {
 } from '../../services/api';
 import { 
   KeyRound, 
-  Lock, 
   ShieldCheck, 
   Send, 
   CheckCircle2, 
   AlertCircle, 
   Clock, 
-  Info,
-  Calendar
 } from 'lucide-react';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -28,6 +25,8 @@ export default function AdminRoomCredentials() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  const [sendWindow, setSendWindow] = useState(null);
+  const [deliveries, setDeliveries] = useState([]);
 
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -55,7 +54,9 @@ export default function AdminRoomCredentials() {
 
     fetchRoomCredentials(selectedTournamentId)
       .then(creds => {
-        if (creds) {
+        setSendWindow(creds.sendWindow || null);
+        setDeliveries(creds.deliveries || []);
+        if (creds.hasCredentials) {
           setRoomId(creds.roomId || '');
           setRoomPassword(creds.roomPassword || '');
         } else {
@@ -82,11 +83,14 @@ export default function AdminRoomCredentials() {
 
     setSaving(true);
     try {
-      const res = await saveRoomCredentials(selectedTournamentId, {
+      await saveRoomCredentials(selectedTournamentId, {
         roomId: roomId.trim(),
         roomPassword: roomPassword.trim(),
       });
       setSuccess('Room credentials saved securely on the server.');
+      const latest = await fetchRoomCredentials(selectedTournamentId);
+      setSendWindow(latest.sendWindow || null);
+      setDeliveries(latest.deliveries || []);
       // Refresh tournament list to update status
       fetchAdminTournaments().then(setTournaments).catch(() => {});
     } catch (err) {
@@ -98,7 +102,7 @@ export default function AdminRoomCredentials() {
 
   const handleDispatchEmails = async () => {
     if (!selectedTournamentId) return;
-    if (!window.confirm('Dispatch room credentials email to all confirmed squad captains now? (Duplicate emails will be safely prevented)')) return;
+    if (!window.confirm('Send the saved room credentials to confirmed squad captains now? Verify the date, start time and recipients first. Failed deliveries may be retried; already-sent email is not resent.')) return;
 
     setError(null);
     setSuccess(null);
@@ -107,6 +111,9 @@ export default function AdminRoomCredentials() {
     try {
       const res = await triggerRoomEmails(selectedTournamentId);
       setSuccess(res.message || 'Room emails dispatch finished.');
+      const latest = await fetchRoomCredentials(selectedTournamentId);
+      setSendWindow(latest.sendWindow || null);
+      setDeliveries(latest.deliveries || []);
     } catch (err) {
       setError(err.message || 'Failed to dispatch room emails.');
     } finally {
@@ -128,7 +135,7 @@ export default function AdminRoomCredentials() {
             ROOM CREDENTIALS MANAGEMENT
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            Enter Custom Room ID and Password. Credentials are never exposed on the public website and are emailed automatically 10 minutes prior to match start.
+            Enter Custom Room ID and Password. Only confirmed squads are eligible; delivery is restricted to the configured 10-minute pre-match window.
           </p>
         </div>
 
@@ -201,8 +208,19 @@ export default function AdminRoomCredentials() {
               </div>
             )}
 
+            {sendWindow && (
+              <div className={`alert ${sendWindow.allowed ? 'alert-success' : 'alert-error'}`} role="status">
+                <Clock size={18} />
+                <div>
+                  {sendWindow.allowed
+                    ? `Authorized send window is open. Target time: ${new Date(sendWindow.targetTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
+                    : sendWindow.warning}
+                </div>
+              </div>
+            )}
+
             {/* Room ID and Password Inputs */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '25px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '25px' }}>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Custom Room ID *</label>
                 <div style={{ position: 'relative' }}>
@@ -249,15 +267,60 @@ export default function AdminRoomCredentials() {
               <button
                 type="button"
                 onClick={handleDispatchEmails}
-                disabled={dispatching || !roomId.trim() || !roomPassword.trim()}
+                disabled={dispatching || !roomId.trim() || !roomPassword.trim() || !sendWindow?.allowed}
                 className="btn btn-secondary btn-lg"
                 title="Manually trigger room emails to confirmed players"
               >
                 <Send size={18} />
-                {dispatching ? 'DISPATCHING...' : 'TEST / DISPATCH NOW'}
+                {dispatching ? 'SENDING...' : 'SEND ROOM ID & PASSWORD'}
               </button>
             </div>
           </form>
+        </div>
+
+        <div className="ffa-card" style={{ padding: 24, marginBottom: 24 }}>
+          <h3 style={{ color: '#fff', fontSize: 17, marginBottom: 10 }}>EMAIL PREVIEW</h3>
+          <pre style={{ whiteSpace: 'pre-wrap', color: 'var(--text-muted)', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7 }}>
+{`To: confirmed squad captain(s) only
+Tournament: ${selectedTournament?.name || '—'}
+Squad: each assigned squad number (01–13)
+Match: ${selectedTournament?.date ? new Date(selectedTournament.date).toLocaleDateString('en-IN') : '—'} · ${selectedTournament?.startTime || '—'} IST
+Room ID: ${roomId || '[not set]'}
+Room password: ${roomPassword || '[not set]'}`}
+          </pre>
+          <p style={{ color: 'var(--text-dim)', fontSize: 12, margin: 0 }}>
+            Until player email addresses are collected and verified, credentials are sent only to each confirmed captain's verified email.
+          </p>
+        </div>
+
+        <div className="ffa-card" style={{ padding: 24, marginBottom: 24, overflowX: 'auto' }}>
+          <h3 style={{ color: '#fff', fontSize: 17, marginBottom: 14 }}>SQUAD DELIVERY STATUS</h3>
+          {deliveries.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)' }}>No confirmed squads to notify.</p>
+          ) : (
+            <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', color: 'var(--text-muted)', fontSize: 13 }}>
+              <thead><tr style={{ textAlign: 'left', color: '#fff' }}>
+                <th style={{ padding: 9 }}>Squad</th><th style={{ padding: 9 }}>Captain</th><th style={{ padding: 9 }}>Recipient</th><th style={{ padding: 9 }}>Status</th><th style={{ padding: 9 }}>Attempts / Audit</th>
+              </tr></thead>
+              <tbody>{deliveries.map((squad) => (
+                <tr key={squad.id} style={{ borderTop: '1px solid var(--border-card)' }}>
+                  <td style={{ padding: 9 }}>{squad.squad_number ? `Squad ${String(squad.squad_number).padStart(2, '0')}` : '—'}</td>
+                  <td style={{ padding: 9 }}>{squad.captain_name}</td>
+                  <td style={{ padding: 9 }}>{squad.captain_email}</td>
+                  <td style={{ padding: 9, color: squad.email_status === 'EMAIL_SENT' ? 'var(--accent-green)' : squad.email_status === 'EMAIL_FAILED' ? 'var(--accent-orange)' : 'var(--accent-gold)' }}>{squad.email_status}</td>
+                  <td style={{ padding: 9 }}>
+                    {squad.attempts || 0}{squad.sent_at ? ` · ${new Date(squad.sent_at).toLocaleString('en-IN')}` : ''}
+                    {squad.last_error ? <div style={{ color: 'var(--accent-orange)' }}>{squad.last_error}</div> : null}
+                    {squad.attemptHistory?.map((attempt) => (
+                      <div key={attempt.attempt_number} style={{ marginTop: 4, fontSize: 11 }}>
+                        #{attempt.attempt_number} · {attempt.status} · {attempt.admin_email || 'Scheduler'} · {new Date(attempt.initiated_at).toLocaleString('en-IN')}
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
         </div>
 
         {/* Automatic Scheduler Information */}

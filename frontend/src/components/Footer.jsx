@@ -83,7 +83,7 @@ export default function Footer() {
               gap: '8px',
             }}>
               <Headphones size={16} color="var(--accent-orange)" />
-              <span>Instant WhatsApp & Email Helpdesk</span>
+              <span>Support: <a href="mailto:aasffa1@gmail.com" style={{ color: 'inherit' }}>aasffa1@gmail.com</a> · <a href="https://t.me/gaiusmorgan901" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Telegram @gaiusmorgan901</a></span>
             </div>
           </div>
         </div>

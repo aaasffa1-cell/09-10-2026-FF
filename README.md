@@ -19,13 +19,15 @@ Free Fire Arena is a four-player BR tournament registration and administration w
 
 ## Registration and manual UPI payment
 
-1. The captain submits a squad with exactly four players. The backend reserves tournament capacity for 15 minutes and sends an email OTP.
-2. The captain verifies the OTP using the private registration access token returned at registration.
+1. The captain signs in or registers with a six-digit email OTP. OTPs are bcrypt-hashed in PostgreSQL, expire after 10 minutes, are single-use, and have IP-, email-, and attempt-based limits. Customer password and password-reset flows are not used.
+2. The signed-in captain submits a squad with exactly four players. The backend requires the captain email to match the verified account.
 3. The backend verifies the stored tournament fee is exactly ₹40 INR and creates one payment request in PostgreSQL.
 4. The site builds a UPI payment URI from backend-only `UPI_ID`/`UPI_DISPLAY_NAME` configuration and renders its QR locally. No payment gateway or third-party QR service is used.
-5. The captain pays from a UPI app, enters the UTR/reference, and the backend stores the payment as `UTR_SUBMITTED`. A unique case-insensitive database index prevents UTR reuse across registrations.
-6. An authenticated admin checks the transaction in their bank/UPI account and approves or rejects it. Only approval in a single PostgreSQL transaction sets payment `VERIFIED` and registration `CONFIRMED`.
-7. A rejected payment remains unconfirmed and can be resubmitted with a different UTR. Payment events preserve submission and review history.
+5. The captain pays from a UPI app, enters the UTR/reference, and the backend stores the payment as `UTR_SUBMITTED` / registration `PAYMENT_PENDING`. A unique case-insensitive database index prevents UTR reuse across registrations. UTR submission never confirms a squad.
+6. An authenticated admin checks the transaction in their bank/UPI account and explicitly confirms actual receipt before approving or rejecting it. Approval locks the tournament row, verifies capacity, and atomically assigns the next available squad number in payment-verification order.
+7. A rejected payment remains unconfirmed, gets no squad number, and can be resubmitted with a different UTR. Payment events preserve submission and review history.
+
+Customer sessions use random opaque tokens in HttpOnly cookies; only token hashes are stored. The private dashboard returns records for the signed-in captain email only. Confirmed tournament capacity is limited to 13 squads / 52 players, and an assigned squad number is permanent.
 
 **This is manual verification, not automatic UPI verification.** The website does not read bank transactions, call bank APIs, receive payment webhooks, or infer success from a UTR. UPI payment is sent by the player to the account linked to the configured UPI ID; the site does not collect or hold funds. Set an active UPI ID whose receiving account you control. See [PAYMENT_SETUP.md](./PAYMENT_SETUP.md).
 
@@ -51,13 +53,13 @@ frontend/
     services/api.js
 ```
 
-The existing `registrations` table represents squads. `players` contains each squad's four player records. There are no separate user accounts, match-result, leaderboard, or in-app notification modules.
+The existing `registrations` table represents squads. `players` contains each squad's four player records. Email-only accounts and sessions support the captain dashboard; match-result, leaderboard, and in-app chat modules are not included.
 
 ## Database
 
-Tables include `admins`, `tournaments`, `registrations`, `players`, `otp_verifications`, `payments`, `payment_events`, `room_credentials`, `email_logs`, and `schema_migrations`.
+Tables include `admins`, `email_users`, `email_login_otps`, `email_otp_rate_limits`, `user_sessions`, `tournaments`, `registrations`, `players`, `otp_verifications`, `payments`, `payment_events`, `room_credentials`, `room_email_attempts`, `email_logs`, and `schema_migrations`.
 
-Before applying migrations to an existing database, back it up and confirm the target environment. The migration adds UTR/review fields and constraints without dropping payment/event tables or historical gateway records.
+Before applying migrations to an existing database, back it up and confirm the target environment. Migration `0004_customer_auth_and_squads` adds email account/session tables, permanent squad numbers, room-email delivery/audit fields, and registration status constraints. Existing confirmed squads are numbered by payment verification time. It stops safely if a tournament has more than 13 confirmed squads; resolve that capacity conflict before retrying.
 
 ```powershell
 npm run db:status
@@ -85,9 +87,18 @@ Required for the UPI payment screen:
 
 Keep these values server-side. Do not put them in a `VITE_*` variable; only the public UPI ID/payee name are returned by the backend for player payment.
 
+## Email sign-in and room delivery
+
+Production requires a real SMTP provider configured with `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`, and `EMAIL_FROM`. `SUPPORT_EMAIL` defaults to `aasffa1@gmail.com`; OTPs are never returned by production APIs.
+
+Room credentials are sent only to confirmed squad captains' verified email addresses; player addresses are not collected yet. The server-side scheduler checks the configured `ROOM_EMAIL_LEAD_MINUTES` (default 10 minutes; an 8:00 PM IST match targets 7:50 PM). Manual dispatch is rejected outside this window. Standalone deployments run Node-Cron; serverless deployments must invoke protected `/api/cron/check-rooms` at least once per minute with the configured `CRON_SECRET` bearer token. Provider responses, attempts, failures, and initiating admin/time are recorded. Failed deliveries may be retried during the authorized window; completed deliveries are not resent by repeated clicks.
+
+Contact: [aasffa1@gmail.com](mailto:aasffa1@gmail.com) · [Telegram @gaiusmorgan901](https://t.me/gaiusmorgan901).
+
 ## Security notes
 
 - Production requires `DATABASE_URL` and `SESSION_SECRET`.
+- Customer sign-in uses email OTP and a server-validated session cookie; the dashboard filters registrations by the authenticated email.
 - Admin sessions use an HttpOnly cookie and a bearer token held in tab-scoped session storage so separately hosted frontend/backend deployments can authenticate cross-origin API requests. The token is removed at logout.
 - Registration-specific OTP, status and payment actions require a high-entropy access token.
 - The backend fixes amount and currency, validates exactly four players, and does not accept payment or registration status from the browser.
@@ -98,5 +109,6 @@ Keep these values server-side. Do not put them in a `VITE_*` variable; only the 
 
 ```powershell
 npm run test:payments --prefix backend
+npm run test:auth-rooms --prefix backend
 npm run build --prefix frontend
 ```

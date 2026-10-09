@@ -8,6 +8,7 @@ import {
   startPaymentRequest,
   submitRegistrationUtr,
   getRegistrationPaymentStatus,
+  getUserProfile,
 } from '../services/api';
 import { QRCodeSVG } from 'qrcode.react';
 import { 
@@ -90,6 +91,12 @@ export default function Register() {
       .catch(err => setErrorMessage(err.message || 'Failed to load tournament information.'))
       .finally(() => setLoadingTournament(false));
   }, [tournamentId]);
+
+  useEffect(() => {
+    getUserProfile()
+      .then((user) => setCaptainEmail(user.email))
+      .catch((error) => setErrorMessage(error.message || 'Please sign in before registering.'));
+  }, []);
 
   // OTP Timer countdown
   useEffect(() => {
@@ -199,18 +206,12 @@ export default function Register() {
       const res = await submitSquadRegistration(payload);
       setRegistrationId(res.registrationId);
       setRegistrationToken(res.registrationToken);
-      setCurrentStep(2);
-      setOtpCooldown(60);
-      setOtpTimer(600);
-      setSuccessMessage(res.message || 'OTP sent to captain email.');
+      setCurrentStep(3);
+      setSuccessMessage(res.message || 'Email verified. Your UPI payment details are ready.');
+      const paymentResult = await startPaymentRequest(res.registrationId, res.registrationToken);
+      setPaymentUnavailable(false);
+      setPaymentSession(paymentResult.payment);
     } catch (err) {
-      if (err.data?.registrationId) {
-        setRegistrationId(err.data.registrationId);
-        setRegistrationToken(err.data.registrationToken);
-        setCurrentStep(2);
-        setOtpCooldown(0);
-        setOtpTimer(600);
-      }
       setErrorMessage(err.message || 'Failed to submit registration.');
     } finally {
       setIsSubmitting(false);
@@ -352,7 +353,7 @@ export default function Register() {
         }}>
           {[
             { num: 1, label: 'SQUAD ROSTER' },
-            { num: 2, label: 'OTP VERIFY' },
+            { num: 2, label: 'EMAIL VERIFIED' },
             { num: 3, label: 'ENTRY FEE (₹40)' },
             { num: 4, label: 'CONFIRMATION' },
           ].map((s) => {
@@ -416,7 +417,7 @@ export default function Register() {
               </div>
               <h2 style={{ fontSize: '24px', color: '#ffffff' }}>REGISTER 4-PLAYER SQUAD</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-                Provide exact player names and Free Fire UID/IDs. Room credentials will be sent to the Captain email.
+                Provide exact player names and Free Fire UID/IDs. Room credentials are sent to the verified captain email.
               </p>
             </div>
 
@@ -464,7 +465,7 @@ export default function Register() {
                       className="form-input"
                       placeholder="e.g. captain@gmail.com"
                       value={captainEmail}
-                      onChange={(e) => setCaptainEmail(e.target.value)}
+                      readOnly
                       required
                     />
                   </div>
