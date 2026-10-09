@@ -124,11 +124,13 @@ export async function adminLogin(email, password) {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
+  if (!data.token || !data.admin) {
+    throw new Error('Admin authentication is not up to date on the API server. Redeploy the backend, then try again.');
+  }
+
+  sessionStorage.setItem('ffa_admin_token', data.token);
   if (data.admin) {
     sessionStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
-  }
-  if (data.token) {
-    sessionStorage.setItem('ffa_admin_token', data.token);
   }
   return data;
 }
@@ -141,6 +143,11 @@ export function adminLogout() {
 }
 
 export function getStoredAdmin() {
+  if (!sessionStorage.getItem('ffa_admin_token')) {
+    sessionStorage.removeItem('ffa_admin_user');
+    return null;
+  }
+
   const userStr = sessionStorage.getItem('ffa_admin_user');
   if (!userStr) return null;
   try {
