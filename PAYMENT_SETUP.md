@@ -44,7 +44,7 @@ Player endpoints require `X-Registration-Token`:
 - `POST /api/payments/registrations/:id/utr` — submit or correct a UTR.
 - `GET /api/payments/registrations/:id/status` — safe payment/registration status; does not return the UTR.
 
-Admin endpoints require the existing admin HttpOnly-cookie authentication:
+Admin endpoints require admin authentication using an HttpOnly cookie or the bearer token returned at login. The frontend uses the bearer token for separately hosted frontend/backend deployments:
 
 - `GET /api/admin/payments?status=&search=&sort=` — payment queue, counts, status filter, search and ordering.
 - `POST /api/admin/payments/:paymentId/verify` — verify submitted UTR and confirm the team.

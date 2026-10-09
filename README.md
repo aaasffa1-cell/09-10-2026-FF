@@ -88,7 +88,7 @@ Keep these values server-side. Do not put them in a `VITE_*` variable; only the 
 ## Security notes
 
 - Production requires `DATABASE_URL` and `SESSION_SECRET`.
-- Admin browser sessions use an HttpOnly cookie; the admin profile is stored in session storage, not the JWT.
+- Admin sessions use an HttpOnly cookie and a bearer token held in tab-scoped session storage so separately hosted frontend/backend deployments can authenticate cross-origin API requests. The token is removed at logout.
 - Registration-specific OTP, status and payment actions require a high-entropy access token.
 - The backend fixes amount and currency, validates exactly four players, and does not accept payment or registration status from the browser.
 - UTR is unique in PostgreSQL, including simultaneous submissions. Only an authenticated admin can approve/reject a submitted UTR.

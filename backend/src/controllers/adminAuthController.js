@@ -60,6 +60,7 @@ async function login(req, res) {
     return res.json({
       success: true,
       message: 'Admin login successful.',
+      token,
       admin: {
         id: admin.id,
         email: admin.email,

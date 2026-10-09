@@ -20,9 +20,13 @@ async function request(endpoint, options = {}) {
 
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${API_BASE}${normalizedEndpoint}`;
+  const adminToken = normalizedEndpoint.startsWith('/admin/')
+    ? sessionStorage.getItem('ffa_admin_token')
+    : null;
   
   const headers = {
     'Content-Type': 'application/json',
+    ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
     ...(options.headers || {}),
   };
 
@@ -123,12 +127,16 @@ export async function adminLogin(email, password) {
   if (data.admin) {
     sessionStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
   }
+  if (data.token) {
+    sessionStorage.setItem('ffa_admin_token', data.token);
+  }
   return data;
 }
 
 export function adminLogout() {
   return request('/admin/logout', { method: 'POST' }).finally(() => {
     sessionStorage.removeItem('ffa_admin_user');
+    sessionStorage.removeItem('ffa_admin_token');
   });
 }
 

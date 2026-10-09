@@ -51,9 +51,9 @@ On a staging deployment, verify:
 - Four-player registration, registration access token, OTP send/verify, and slot reservation behave correctly.
 - Registration status and payment/UTR endpoints reject requests without the registration access token.
 - A player can submit a UTR but cannot verify it or confirm a team.
-- Admin payment review requires the admin HttpOnly-cookie session; verify/reject actions are audited and transactional.
+- Admin payment review requires the admin session cookie or bearer token; verify/reject actions are audited and transactional.
 - Payment order creation reports provider unavailability until a real adapter exists; no fake payment success appears.
-- Admin login uses an HttpOnly cookie; admin-only APIs reject missing/invalid authentication.
+- Admin login uses an HttpOnly cookie and returns a bearer token for cross-origin frontend/backend deployments; admin-only APIs reject missing/invalid authentication.
 - Registration/payment history and room management load with admin authentication.
 - SMTP and the protected room-email cron work in the target deployment.
 - Database migration history/data is correct and logs contain no secrets.
