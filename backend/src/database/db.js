@@ -4,6 +4,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const { migratePaymentSchema, migrateManualUpiReview } = require('./paymentMigration');
 const { migrateCustomerAuthAndSquads } = require('./customerAuthAndSquadsMigration');
+const { migrateEmailOtpRateLimits } = require('./emailOtpRateLimitsMigration');
 
 let pool = null;
 let isInMemory = false;
@@ -184,6 +185,12 @@ async function runMigrations() {
       await migrateCustomerAuthAndSquads(client);
       await client.query(
         `INSERT INTO schema_migrations (version) VALUES ('0004_customer_auth_and_squads')`
+      );
+    }
+    if (!appliedVersions.has('0005_email_otp_rate_limits')) {
+      await migrateEmailOtpRateLimits(client);
+      await client.query(
+        `INSERT INTO schema_migrations (version) VALUES ('0005_email_otp_rate_limits')`
       );
     }
 

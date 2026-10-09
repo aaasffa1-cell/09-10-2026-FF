@@ -8,6 +8,7 @@ const { newDb } = require('pg-mem');
 const database = require('../database/db');
 const { migratePaymentSchema, migrateManualUpiReview } = require('../database/paymentMigration');
 const { migrateCustomerAuthAndSquads } = require('../database/customerAuthAndSquadsMigration');
+const { migrateEmailOtpRateLimits } = require('../database/emailOtpRateLimitsMigration');
 
 let pool;
 let sentLoginOtp;
@@ -37,6 +38,19 @@ async function setupDatabase() {
   await migrateManualUpiReview(pool);
   await migrateCustomerAuthAndSquads(pool);
 }
+
+test('OTP rate-limit migration safely adds the missing table', async () => {
+  const memoryDatabase = newDb();
+  const Pool = memoryDatabase.adapters.createPg().Pool;
+  const migrationPool = new Pool();
+  await migrateEmailOtpRateLimits(migrationPool);
+  const table = await migrationPool.query(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = current_schema() AND table_name = 'email_otp_rate_limits'`
+  );
+  assert.equal(table.rows.length, 1);
+  await migrationPool.end();
+});
 
 function responseMock() {
   return {

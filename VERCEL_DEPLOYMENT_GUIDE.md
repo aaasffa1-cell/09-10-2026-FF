@@ -14,7 +14,7 @@ Root `vercel.json` rewrites `/api/*` to the serverless Express adapter and other
 
 1. Create a staging PostgreSQL database and set `DATABASE_URL` in the staging backend environment.
 2. Back up any existing database before schema changes.
-3. Check migration history with `npm run db:status`; apply migrations through `0004_customer_auth_and_squads` with `npm run db:setup` only after confirming the target URL. This adds hashed OTP/session tables and squad numbering; the migration stops for manual review if existing tournaments exceed 13 confirmed squads.
+3. Check migration history with `npm run db:status`; apply migrations through `0005_email_otp_rate_limits` with `npm run db:setup` only after confirming the target URL. These add hashed OTP/session tables, squad numbering, and OTP rate-limit storage; the squad migration stops for manual review if existing tournaments exceed 13 confirmed squads.
 4. Create the initial admin account using backend-only `ADMIN_EMAIL` and `ADMIN_PASSWORD`. These are synchronized into the database during setup/startup; do not use documented/default credentials.
 5. Configure SMTP and verify delivery from the backend environment.
 6. Set `FRONTEND_URL` to the exact browser origin(s) that should be allowed. Production CORS does not allow arbitrary Vercel subdomains. Local HTTP origins on `localhost`, `127.0.0.1`, and `[::1]` are allowed on any port for local frontend development.
@@ -60,4 +60,4 @@ On a staging deployment, verify:
 - Manual room sending is rejected outside the ten-minute pre-match window; verify the external scheduler independently of an open dashboard.
 - Database migration history/data is correct and logs contain no secrets.
 
-Before production launch, back up PostgreSQL, apply migration `0004_customer_auth_and_squads` to staging, verify the UPI ID belongs to the intended receiving account, and test manual admin review with a real ₹40 transfer.
+Before production launch, back up PostgreSQL, apply migrations through `0005_email_otp_rate_limits` to staging, verify the UPI ID belongs to the intended receiving account, and test manual admin review with a real ₹40 transfer.

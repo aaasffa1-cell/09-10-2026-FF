@@ -59,7 +59,7 @@ The existing `registrations` table represents squads. `players` contains each sq
 
 Tables include `admins`, `email_users`, `email_login_otps`, `email_otp_rate_limits`, `user_sessions`, `tournaments`, `registrations`, `players`, `otp_verifications`, `payments`, `payment_events`, `room_credentials`, `room_email_attempts`, `email_logs`, and `schema_migrations`.
 
-Before applying migrations to an existing database, back it up and confirm the target environment. Migration `0004_customer_auth_and_squads` adds email account/session tables, permanent squad numbers, room-email delivery/audit fields, and registration status constraints. Existing confirmed squads are numbered by payment verification time. It stops safely if a tournament has more than 13 confirmed squads; resolve that capacity conflict before retrying.
+Before applying migrations to an existing database, back it up and confirm the target environment. Migration `0004_customer_auth_and_squads` adds email account/session tables, permanent squad numbers, room-email delivery/audit fields, and registration status constraints. Existing confirmed squads are numbered by payment verification time. It stops safely if a tournament has more than 13 confirmed squads; resolve that capacity conflict before retrying. Migration `0005_email_otp_rate_limits` ensures the per-email OTP rate-limit table exists.
 
 ```powershell
 npm run db:status
