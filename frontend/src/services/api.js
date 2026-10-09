@@ -1,4 +1,6 @@
-let rawApiBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').trim();
+const configuredApiBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '').trim();
+const isVercelDeployment = window.location.hostname.endsWith('.vercel.app');
+let rawApiBase = isVercelDeployment ? '' : configuredApiBase;
 
 if (!rawApiBase) {
   rawApiBase = '/api';
