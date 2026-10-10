@@ -14,7 +14,7 @@ Root `vercel.json` rewrites `/api/*` to the serverless Express adapter and other
 
 1. Create a staging PostgreSQL database and set `DATABASE_URL` in the staging backend environment.
 2. Back up any existing database before schema changes.
-3. Check migration history with `npm run db:status`; back up the target database and review migration `0006_tournament_remodel` before applying it. The migration adds tournament metadata, cancellation and results history, admin sessions, OTP intent/purpose, and configurable capacity/numbering constraints. It stops for manual review if duplicate captain registrations exist in a tournament.
+3. Check migration history with `npm run db:status`; back up the target database and review pending migrations before applying them. Migration `0006_tournament_remodel` adds tournament metadata, cancellation and results history, admin sessions, OTP intent/purpose, and configurable capacity/numbering constraints. It stops for manual review if duplicate captain registrations exist in a tournament. Migration `0007_schema_compatibility` idempotently ensures the existing `registration_open` field and its listing index are present; it preserves tournament records and defaults missing values to `TRUE`.
 4. Create the initial admin account using backend-only `ADMIN_EMAIL` and `ADMIN_PASSWORD`. These are synchronized into the database during setup/startup; do not use documented/default credentials.
 5. Configure SMTP and verify delivery from the backend environment.
 6. Set `FRONTEND_URL` to the exact browser origin(s) that should be allowed. Production CORS does not allow arbitrary Vercel subdomains. Local HTTP origins on `localhost`, `127.0.0.1`, and `[::1]` are allowed on any port for local frontend development.

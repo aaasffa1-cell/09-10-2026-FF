@@ -6,6 +6,7 @@ const { migratePaymentSchema, migrateManualUpiReview } = require('./paymentMigra
 const { migrateCustomerAuthAndSquads } = require('./customerAuthAndSquadsMigration');
 const { migrateEmailOtpRateLimits } = require('./emailOtpRateLimitsMigration');
 const { migrateTournamentRemodel } = require('./remodelMigration');
+const { migrateSchemaCompatibility } = require('./schemaCompatibilityMigration');
 
 let pool = null;
 let isInMemory = false;
@@ -196,6 +197,12 @@ async function runMigrations() {
       await migrateTournamentRemodel(client);
       await client.query(
         `INSERT INTO schema_migrations (version) VALUES ('0006_tournament_remodel')`
+      );
+    }
+    if (!appliedVersions.has('0007_schema_compatibility')) {
+      await migrateSchemaCompatibility(client);
+      await client.query(
+        `INSERT INTO schema_migrations (version) VALUES ('0007_schema_compatibility')`
       );
     }
 

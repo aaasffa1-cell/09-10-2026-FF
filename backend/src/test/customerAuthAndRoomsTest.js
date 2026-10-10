@@ -10,6 +10,7 @@ const { migratePaymentSchema, migrateManualUpiReview } = require('../database/pa
 const { migrateCustomerAuthAndSquads } = require('../database/customerAuthAndSquadsMigration');
 const { migrateEmailOtpRateLimits } = require('../database/emailOtpRateLimitsMigration');
 const { migrateTournamentRemodel } = require('../database/remodelMigration');
+const { migrateSchemaCompatibility } = require('../database/schemaCompatibilityMigration');
 
 let pool;
 let sentLoginOtp;
@@ -52,6 +53,39 @@ test('OTP rate-limit migration safely adds the missing table', async () => {
   );
   assert.equal(table.rows.length, 1);
   await migrationPool.end();
+});
+
+test('schema migrations restore legacy fields needed by tournament listing and player OTP', async () => {
+  await setupDatabase();
+  await pool.query(`DROP INDEX idx_tournaments_date`);
+  await pool.query(`
+    ALTER TABLE tournaments
+      DROP COLUMN registration_deadline,
+      DROP COLUMN map,
+      DROP COLUMN game_mode,
+      DROP COLUMN eligibility_requirements,
+      DROP COLUMN tournament_status,
+      DROP COLUMN registration_open;
+    ALTER TABLE email_login_otps
+      DROP COLUMN registration_intent,
+      DROP COLUMN otp_purpose;
+  `);
+
+  await migrateTournamentRemodel(pool);
+  await migrateSchemaCompatibility(pool);
+
+  const tournamentsResponse = responseMock();
+  const tournamentController = require('../controllers/tournamentController');
+  await tournamentController.getAllTournaments({}, tournamentsResponse);
+  assert.equal(tournamentsResponse.statusCode, 200);
+  assert.deepEqual(tournamentsResponse.body.tournaments, []);
+
+  sentLoginOtp = null;
+  const otpResponse = responseMock();
+  await authController.requestLoginOtp({ body: { email: 'legacy@example.com' } }, otpResponse);
+  assert.equal(otpResponse.statusCode, 200);
+  assert.equal(typeof sentLoginOtp, 'string');
+  await pool.end();
 });
 
 function responseMock() {
