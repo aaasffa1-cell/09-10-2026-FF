@@ -16,6 +16,7 @@ import Rules from './pages/Rules';
 import Contact from './pages/Contact';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Results from './pages/Results';
 
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin';
@@ -23,6 +24,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminTournaments from './pages/admin/AdminTournaments';
 import AdminRegistrations from './pages/admin/AdminRegistrations';
 import AdminRoomCredentials from './pages/admin/AdminRoomCredentials';
+import AdminResults from './pages/admin/AdminResults';
 
 export default function App() {
   return (
@@ -39,6 +41,7 @@ export default function App() {
             <Route path="/rules" element={<Rules />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/results" element={<Results />} />
 
             <Route element={<CustomerProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
@@ -54,6 +57,7 @@ export default function App() {
               <Route path="/admin/tournaments" element={<AdminTournaments />} />
               <Route path="/admin/registrations" element={<AdminRegistrations />} />
               <Route path="/admin/room-credentials" element={<AdminRoomCredentials />} />
+              <Route path="/admin/results" element={<AdminResults />} />
             </Route>
 
             {/* Fallback 404 */}

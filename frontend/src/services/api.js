@@ -60,10 +60,15 @@ export async function fetchTournamentById(id) {
   return data.tournament;
 }
 
-export async function requestUserOtp(email) {
+export async function fetchPublishedResults() {
+  const data = await request('/tournaments/results');
+  return data.results || [];
+}
+
+export async function requestUserOtp(email, registrationIntent = false) {
   return request('/auth/request-otp', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, registrationIntent }),
   });
 }
 
@@ -86,6 +91,18 @@ export async function logoutUser() {
 export async function fetchUserDashboard() {
   const data = await request('/auth/dashboard');
   return data.registrations || [];
+}
+
+export async function fetchOwnedPaymentStatus(registrationId) {
+  const data = await request(`/auth/dashboard/registrations/${registrationId}/payment`);
+  return data.payment;
+}
+
+export async function submitOwnedRegistrationUtr(registrationId, utr) {
+  return request(`/auth/dashboard/registrations/${registrationId}/utr`, {
+    method: 'POST',
+    body: JSON.stringify({ utr }),
+  });
 }
 
 export async function submitSquadRegistration(payload) {
@@ -147,19 +164,21 @@ export async function submitContactMessage(payload) {
 }
 
 // ---------------- ADMIN APIS ----------------
-export async function adminLogin(email, password) {
-  const data = await request('/admin/login', {
+export async function requestAdminOtp(email) {
+  return request('/admin/request-otp', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email }),
   });
-  if (!data.token || !data.admin) {
-    throw new Error('Admin authentication is not up to date on the API server. Redeploy the backend, then try again.');
-  }
+}
 
-  sessionStorage.setItem('ffa_admin_token', data.token);
-  if (data.admin) {
-    sessionStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
-  }
+export async function verifyAdminOtp(email, otp) {
+  const data = await request('/admin/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+  if (!data.admin) throw new Error('Administrator authentication failed.');
+  sessionStorage.removeItem('ffa_admin_token');
+  sessionStorage.setItem('ffa_admin_user', JSON.stringify(data.admin));
   return data;
 }
 
@@ -171,11 +190,6 @@ export function adminLogout() {
 }
 
 export function getStoredAdmin() {
-  if (!sessionStorage.getItem('ffa_admin_token')) {
-    sessionStorage.removeItem('ffa_admin_user');
-    return null;
-  }
-
   const userStr = sessionStorage.getItem('ffa_admin_user');
   if (!userStr) return null;
   try {
@@ -193,6 +207,18 @@ export async function fetchAdminProfile() {
 export async function fetchAdminStats() {
   const data = await request('/admin/stats');
   return data.stats;
+}
+
+export async function fetchAdminResults() {
+  const data = await request('/admin/results');
+  return data.results || [];
+}
+
+export async function saveAdminResult(tournamentId, payload) {
+  return request(`/admin/tournaments/${tournamentId}/results`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchAdminTournaments() {

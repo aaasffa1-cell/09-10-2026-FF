@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { migratePaymentSchema, migrateManualUpiReview } = require('./paymentMigration');
 const { migrateCustomerAuthAndSquads } = require('./customerAuthAndSquadsMigration');
 const { migrateEmailOtpRateLimits } = require('./emailOtpRateLimitsMigration');
+const { migrateTournamentRemodel } = require('./remodelMigration');
 
 let pool = null;
 let isInMemory = false;
@@ -94,7 +95,7 @@ async function initDb() {
   // Use pg-mem for local development Postgres engine fallback
   try {
     const { newDb } = require('pg-mem');
-    memDb = newDb();
+    memDb = newDb({ noAstCoverageCheck: true });
     memAdapter = memDb.adapters.createPg();
     pool = new memAdapter.Pool();
     isInMemory = true;
@@ -136,9 +137,7 @@ async function runMigrations() {
   }
 
   const schemaPath = path.join(__dirname, 'schema.sql');
-  const seedPath = path.join(__dirname, 'seed.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-  const seedSql = fs.readFileSync(seedPath, 'utf8');
   const client = await pool.connect();
 
   try {
@@ -193,9 +192,18 @@ async function runMigrations() {
         `INSERT INTO schema_migrations (version) VALUES ('0005_email_otp_rate_limits')`
       );
     }
+    if (!appliedVersions.has('0006_tournament_remodel')) {
+      await migrateTournamentRemodel(client);
+      await client.query(
+        `INSERT INTO schema_migrations (version) VALUES ('0006_tournament_remodel')`
+      );
+    }
 
-    console.log('[DB] Applying idempotent seed data...');
-    await client.query(seedSql);
+    if (process.env.NODE_ENV !== 'production' && process.env.RUN_DEVELOPMENT_SEEDS === 'true') {
+      const seedSql = fs.readFileSync(path.join(__dirname, 'seed.sql'), 'utf8');
+      console.log('[DB] Applying explicitly enabled development seed data...');
+      await client.query(seedSql);
+    }
 
     if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
       const adminEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
@@ -209,7 +217,7 @@ async function runMigrations() {
     }
 
     await client.query('COMMIT');
-    console.log('[DB] Schema migrations and seed completed successfully.');
+    console.log('[DB] Schema migrations completed successfully.');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[DB] Migration transaction failed:', error.message);

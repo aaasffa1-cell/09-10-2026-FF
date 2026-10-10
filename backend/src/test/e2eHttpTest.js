@@ -140,10 +140,11 @@ async function runE2ETests() {
     });
 
     if (process.env.UPI_ID) {
-      if (paymentStart.status !== 200 || paymentStart.body.payment?.amount !== 40 ||
+      if (paymentStart.status !== 200 ||
+          Number(paymentStart.body.payment?.amount) !== Number(testTourney.entryFee) ||
           paymentStart.body.payment?.status !== 'PENDING' ||
           !paymentStart.body.payment?.upiUri?.startsWith('upi://pay?')) {
-        throw new Error('Configured manual UPI request did not return a ₹40 payment URI.');
+        throw new Error('Configured manual UPI request did not use the selected tournament entry fee.');
       }
       const utrRes = await makeRequest({
         hostname: 'localhost',

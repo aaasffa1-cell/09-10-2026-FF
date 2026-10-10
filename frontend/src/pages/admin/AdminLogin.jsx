@@ -1,25 +1,71 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { adminLogin } from '../../services/api';
-import { Lock, Mail, ShieldAlert, ArrowRight } from 'lucide-react';
+import { requestAdminOtp, verifyAdminOtp } from '../../services/api';
+import { Lock, ShieldAlert, ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [step, setStep] = useState('email');
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [expiresInSeconds, setExpiresInSeconds] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (!resendSeconds && !expiresInSeconds) return undefined;
+    const timer = setInterval(() => {
+      setResendSeconds((seconds) => Math.max(0, seconds - 1));
+      setExpiresInSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendSeconds, expiresInSeconds]);
+
+  const handleRequestOtp = async (event) => {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await requestAdminOtp(email.trim());
+      setStep('otp');
+      setResendSeconds(60);
+      setExpiresInSeconds(result.expiresInSeconds || 300);
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to send the sign-in code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (loading || resendSeconds > 0) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await requestAdminOtp(email.trim());
+      setOtp('');
+      setResendSeconds(60);
+      setExpiresInSeconds(result.expiresInSeconds || 300);
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to send a new code.');
+      if (requestError.data?.retryAfterSeconds) setResendSeconds(requestError.data.retryAfterSeconds);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (event) => {
+    event.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      await adminLogin(email.trim(), password);
+      const result = await verifyAdminOtp(email.trim(), otp.trim());
+      sessionStorage.setItem('ffa_admin_user', JSON.stringify(result.admin));
       navigate('/admin');
     } catch (err) {
-      setError(err.message || 'Invalid administrator email or password.');
+      setError(err.message || 'Unable to verify the sign-in code.');
     } finally {
       setLoading(false);
     }
@@ -60,7 +106,7 @@ export default function AdminLogin() {
             ADMINISTRATOR PORTAL
           </h1>
           <p style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
-            Enter your credentials to manage tournaments and registrations
+            Sign in with a one-time code sent to the authorized administrator email.
           </p>
         </div>
 
@@ -71,7 +117,7 @@ export default function AdminLogin() {
           </div>
         )}
 
-        <form onSubmit={handleLogin}>
+        {step === 'email' ? <form onSubmit={handleRequestOtp}>
           <div className="form-group">
             <label className="form-label">Admin Email</label>
             <div style={{ position: 'relative' }}>
@@ -86,34 +132,47 @@ export default function AdminLogin() {
               />
             </div>
           </div>
-
-          <div className="form-group" style={{ marginBottom: '28px' }}>
-            <label className="form-label">Password</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="password"
-                required
-                className="form-input"
-                placeholder="••••••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !email.trim()}
             className="btn btn-primary btn-lg"
             style={{ width: '100%' }}
           >
-            {loading ? 'AUTHENTICATING...' : (
+            {loading ? 'SENDING CODE...' : (
               <>
-                SIGN IN TO DASHBOARD <ArrowRight size={18} />
+                SEND ONE-TIME CODE <ArrowRight size={18} />
               </>
             )}
           </button>
-        </form>
+        </form> : <form onSubmit={handleVerifyOtp}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="admin-otp">6-digit email code</label>
+            <div style={{ position: 'relative' }}>
+              <KeyRound size={17} style={{ position: 'absolute', left: 13, top: 14, color: 'var(--text-dim)' }} />
+              <input id="admin-otp" inputMode="numeric" autoComplete="one-time-code" required
+                pattern="[0-9]{6}" maxLength={6} className="form-input"
+                style={{ paddingLeft: 40, letterSpacing: '0.25em' }} value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+            </div>
+            <small style={{ color: 'var(--text-dim)' }}>
+              Sent to {email}. {expiresInSeconds > 0
+                ? `Expires in ${Math.floor(expiresInSeconds / 60)}:${String(expiresInSeconds % 60).padStart(2, '0')}.`
+                : 'This code has expired; request a new one.'}
+            </small>
+          </div>
+          <button type="submit" disabled={loading || otp.length !== 6}
+            className="btn btn-primary btn-lg" style={{ width: '100%' }}>
+            {loading ? 'VERIFYING...' : <><ShieldCheck size={18} /> VERIFY & SIGN IN</>}
+          </button>
+          <button type="button" className="btn btn-secondary" style={{ width: '100%', marginTop: 10 }}
+            disabled={loading || resendSeconds > 0} onClick={handleResendOtp}>
+            {resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend code'}
+          </button>
+          <button type="button" className="btn btn-secondary" style={{ width: '100%', marginTop: 10 }}
+            disabled={loading} onClick={() => { setStep('email'); setOtp(''); setError(null); }}>
+            Change email
+          </button>
+        </form>}
 
         <div style={{
           marginTop: '25px',
@@ -123,7 +182,7 @@ export default function AdminLogin() {
           color: 'var(--text-dim)',
           textAlign: 'center',
         }}>
-          Protected by bcrypt encryption & session tokens.
+          Protected by single-use email codes and server-managed sessions.
         </div>
       </div>
     </div>

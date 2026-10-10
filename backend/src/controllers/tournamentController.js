@@ -3,9 +3,14 @@ const { query } = require('../database/db');
 // Helper to compute tournament registration status
 function computeTournamentStatus(t) {
   const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-  const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
+  const maxSlots = parseInt(t.max_slots || '13', 10);
 
-  if (!t.registration_open) {
+  if (t.tournament_status === 'CANCELLED') {
+    return 'CANCELLED';
+  }
+
+  if (!t.registration_open ||
+      (t.registration_deadline && new Date(t.registration_deadline) <= new Date())) {
     return 'REGISTRATION_CLOSED';
   }
 
@@ -31,6 +36,11 @@ async function getAllTournaments(req, res) {
         tournaments.squad_size,
         tournaments.max_slots,
         tournaments.rules,
+        tournaments.registration_deadline,
+        tournaments.map,
+        tournaments.game_mode,
+        tournaments.eligibility_requirements,
+        tournaments.tournament_status,
         tournaments.registration_open,
         tournaments.created_at,
         COALESCE(sub.confirmed_slots, 0) AS confirmed_slots
@@ -46,7 +56,7 @@ async function getAllTournaments(req, res) {
 
     const tournaments = result.rows.map(t => {
       const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-      const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
+      const maxSlots = parseInt(t.max_slots || '13', 10);
       const status = computeTournamentStatus(t);
 
       return {
@@ -62,6 +72,10 @@ async function getAllTournaments(req, res) {
         confirmedSlots: confirmedSlots,
         availableSlots: Math.max(0, maxSlots - confirmedSlots),
         rules: t.rules,
+        registrationDeadline: t.registration_deadline,
+        map: t.map,
+        gameMode: t.game_mode,
+        eligibilityRequirements: t.eligibility_requirements,
         registrationOpen: t.registration_open,
         status: status, // OPEN | SLOTS_FULL | REGISTRATION_CLOSED
       };
@@ -97,6 +111,11 @@ async function getTournamentById(req, res) {
         tournaments.squad_size,
         tournaments.max_slots,
         tournaments.rules,
+        tournaments.registration_deadline,
+        tournaments.map,
+        tournaments.game_mode,
+        tournaments.eligibility_requirements,
+        tournaments.tournament_status,
         tournaments.registration_open,
         tournaments.created_at,
         COALESCE(sub.confirmed_slots, 0) AS confirmed_slots
@@ -119,7 +138,7 @@ async function getTournamentById(req, res) {
 
     const t = result.rows[0];
     const confirmedSlots = parseInt(t.confirmed_slots || '0', 10);
-    const maxSlots = Math.min(parseInt(t.max_slots || '13', 10), 13);
+    const maxSlots = parseInt(t.max_slots || '13', 10);
     const status = computeTournamentStatus(t);
 
     return res.json({
@@ -137,6 +156,10 @@ async function getTournamentById(req, res) {
         confirmedSlots: confirmedSlots,
         availableSlots: Math.max(0, maxSlots - confirmedSlots),
         rules: t.rules,
+        registrationDeadline: t.registration_deadline,
+        map: t.map,
+        gameMode: t.game_mode,
+        eligibilityRequirements: t.eligibility_requirements,
         registrationOpen: t.registration_open,
         status: status,
       },

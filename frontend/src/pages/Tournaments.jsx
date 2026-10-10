@@ -54,7 +54,7 @@ export default function Tournaments() {
             ESPORTS TOURNAMENTS
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '15px', maxWidth: '600px', margin: '0 auto' }}>
-            Join 4-player squad BR tournaments. Entry fee ₹40 per squad. Room credentials sent 10 minutes prior to start time.
+            Browse squad BR tournaments. Entry fees and capacity are shown for each tournament. Room credentials are sent manually by the administrator.
           </p>
         </div>
 

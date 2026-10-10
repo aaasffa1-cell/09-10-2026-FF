@@ -48,25 +48,16 @@ export default function Register() {
   const [registrationId, setRegistrationId] = useState(null);
   const [registrationToken, setRegistrationToken] = useState(null);
 
-  // Step 1: Form State (Exactly 4 players)
+  // Step 1: Captain information represents the squad registration.
   const [captainName, setCaptainName] = useState('');
   const [captainEmail, setCaptainEmail] = useState('');
   const [captainPhone, setCaptainPhone] = useState('');
   const [captainFreeFireId, setCaptainFreeFireId] = useState('');
 
-  const [player2Name, setPlayer2Name] = useState('');
-  const [player2FreeFireId, setPlayer2FreeFireId] = useState('');
-
-  const [player3Name, setPlayer3Name] = useState('');
-  const [player3FreeFireId, setPlayer3FreeFireId] = useState('');
-
-  const [player4Name, setPlayer4Name] = useState('');
-  const [player4FreeFireId, setPlayer4FreeFireId] = useState('');
-
   // Step 2: OTP State
   const [otp, setOtp] = useState('');
   const [otpCooldown, setOtpCooldown] = useState(60);
-  const [otpTimer, setOtpTimer] = useState(600); // 10 minutes (600s)
+  const [otpTimer, setOtpTimer] = useState(300);
 
   // Status & Error states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -132,7 +123,7 @@ export default function Register() {
             tournamentName: tournament.name,
             captainName,
             captainEmail,
-            squadId: registrationId,
+            squadNumber: payment.squadNumber,
             amountPaid: payment.amount,
           });
           setCurrentStep(4);
@@ -167,26 +158,6 @@ export default function Register() {
       return;
     }
 
-    if (!player2Name.trim() || !player2FreeFireId.trim() ||
-        !player3Name.trim() || !player3FreeFireId.trim() ||
-        !player4Name.trim() || !player4FreeFireId.trim()) {
-      setErrorMessage('Please fill in all 4 players details. No fields can be empty.');
-      return;
-    }
-
-    // Check for duplicate Free Fire IDs
-    const ffIds = [
-      captainFreeFireId.trim().toLowerCase(),
-      player2FreeFireId.trim().toLowerCase(),
-      player3FreeFireId.trim().toLowerCase(),
-      player4FreeFireId.trim().toLowerCase(),
-    ];
-    const uniqueFfIds = new Set(ffIds);
-    if (uniqueFfIds.size !== 4) {
-      setErrorMessage('Duplicate Free Fire ID detected. Every player in the squad must have a unique Free Fire ID.');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const payload = {
@@ -195,12 +166,7 @@ export default function Register() {
         captainEmail: captainEmail.trim(),
         captainPhone: captainPhone.trim(),
         captainFreeFireId: captainFreeFireId.trim(),
-        players: [
-          { fullName: captainName.trim(), freeFireId: captainFreeFireId.trim() },
-          { fullName: player2Name.trim(), freeFireId: player2FreeFireId.trim() },
-          { fullName: player3Name.trim(), freeFireId: player3FreeFireId.trim() },
-          { fullName: player4Name.trim(), freeFireId: player4FreeFireId.trim() },
-        ],
+        players: [{ fullName: captainName.trim(), freeFireId: captainFreeFireId.trim() }],
       };
 
       const res = await submitSquadRegistration(payload);
@@ -232,7 +198,7 @@ export default function Register() {
     try {
       await verifyOtp(registrationId, otp.trim(), registrationToken);
       setCurrentStep(3);
-      setSuccessMessage('Email verified. Your ₹40 UPI payment details are ready.');
+      setSuccessMessage(`Email verified. Your ₹${tournament.entryFee} UPI payment details are ready.`);
       try {
         const result = await startPaymentRequest(registrationId, registrationToken);
         setPaymentUnavailable(false);
@@ -242,7 +208,7 @@ export default function Register() {
             tournamentName: tournament.name,
             captainName,
             captainEmail,
-            squadId: registrationId,
+            squadNumber: result.payment.squadNumber,
             amountPaid: result.payment.amount,
           });
           setCurrentStep(4);
@@ -266,7 +232,7 @@ export default function Register() {
     try {
       const res = await resendOtp(registrationId, registrationToken);
       setOtpCooldown(60);
-      setOtpTimer(600);
+      setOtpTimer(300);
       setSuccessMessage(res.message || 'Fresh OTP dispatched to your email.');
     } catch (err) {
       setErrorMessage(err.message || 'Failed to resend OTP.');
@@ -286,7 +252,7 @@ export default function Register() {
           tournamentName: tournament.name,
           captainName,
           captainEmail,
-          squadId: registrationId,
+          squadNumber: result.payment.squadNumber,
           amountPaid: result.payment.amount,
         });
         setCurrentStep(4);
@@ -354,7 +320,7 @@ export default function Register() {
           {[
             { num: 1, label: 'SQUAD ROSTER' },
             { num: 2, label: 'EMAIL VERIFIED' },
-            { num: 3, label: 'ENTRY FEE (₹40)' },
+            { num: 3, label: 'ENTRY FEE' },
             { num: 4, label: 'CONFIRMATION' },
           ].map((s) => {
             const isDone = currentStep > s.num;
@@ -415,9 +381,9 @@ export default function Register() {
               <div className="badge badge-gold" style={{ marginBottom: '8px' }}>
                 {tournament.name} (Entry: ₹{tournament.entryFee})
               </div>
-              <h2 style={{ fontSize: '24px', color: '#ffffff' }}>REGISTER 4-PLAYER SQUAD</h2>
+              <h2 style={{ fontSize: '24px', color: '#ffffff' }}>REGISTER YOUR SQUAD</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-                Provide exact player names and Free Fire UID/IDs. Room credentials are sent to the verified captain email.
+                One registration reserves one squad slot. Only the captain's details are required.
               </p>
             </div>
 
@@ -442,7 +408,7 @@ export default function Register() {
                   marginBottom: '16px',
                   textTransform: 'uppercase',
                 }}>
-                  <Flame size={16} /> PLAYER 1 (CAPTAIN & CONTACT PERSON)
+                  <Flame size={16} /> SQUAD CAPTAIN
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
@@ -496,124 +462,13 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Player 2 */}
-              <div style={{
-                background: '#0e1018',
-                border: '1px solid #1f2336',
-                borderRadius: 'var(--radius-md)',
-                padding: '20px',
-                marginBottom: '20px',
-              }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', marginBottom: '14px', textTransform: 'uppercase' }}>
-                  PLAYER 2 DETAILS
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 2 Full Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Rohit Varma"
-                      value={player2Name}
-                      onChange={(e) => setPlayer2Name(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 2 Free Fire ID *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. 2938472910"
-                      value={player2FreeFireId}
-                      onChange={(e) => setPlayer2FreeFireId(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Player 3 */}
-              <div style={{
-                background: '#0e1018',
-                border: '1px solid #1f2336',
-                borderRadius: 'var(--radius-md)',
-                padding: '20px',
-                marginBottom: '20px',
-              }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', marginBottom: '14px', textTransform: 'uppercase' }}>
-                  PLAYER 3 DETAILS
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 3 Full Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Sanjay Kumar"
-                      value={player3Name}
-                      onChange={(e) => setPlayer3Name(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 3 Free Fire ID *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. 3948271029"
-                      value={player3FreeFireId}
-                      onChange={(e) => setPlayer3FreeFireId(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Player 4 */}
-              <div style={{
-                background: '#0e1018',
-                border: '1px solid #1f2336',
-                borderRadius: 'var(--radius-md)',
-                padding: '20px',
-                marginBottom: '25px',
-              }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', marginBottom: '14px', textTransform: 'uppercase' }}>
-                  PLAYER 4 DETAILS
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 4 Full Name *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Vikram Singh"
-                      value={player4Name}
-                      onChange={(e) => setPlayer4Name(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Player 4 Free Fire ID *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. 4829103948"
-                      value={player4FreeFireId}
-                      onChange={(e) => setPlayer4FreeFireId(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
               <button
                 type="submit"
                 disabled={isSubmitting || tournament.status !== 'OPEN'}
                 className="btn btn-primary btn-lg"
                 style={{ width: '100%' }}
               >
-                {isSubmitting ? 'SUBMITTING & SENDING OTP...' : 'SUBMIT SQUAD & VERIFY EMAIL'}
+                {isSubmitting ? 'SUBMITTING REGISTRATION...' : 'CONTINUE TO PAYMENT'}
               </button>
             </form>
           </div>
@@ -712,7 +567,7 @@ export default function Register() {
               </div>
               <h2 style={{ fontSize: '26px', color: '#ffffff' }}>TEAM REGISTRATION PAYMENT</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-                Pay exactly ₹40 using UPI, then submit the UTR for manual admin verification.
+                Pay the displayed tournament entry fee using UPI, then submit the UTR for manual admin verification.
               </p>
             </div>
 
@@ -752,7 +607,7 @@ export default function Register() {
               }}>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>Total Amount Due:</span>
                 <span style={{ fontSize: '28px', fontWeight: 900, color: 'var(--accent-green)' }}>
-                  ₹40
+                  ₹{paymentSession?.amount ?? tournament.entryFee}
                 </span>
               </div>
             </div>
@@ -771,7 +626,7 @@ export default function Register() {
                 </div>
                 <div style={{ color: '#ffffff', fontWeight: 800, margin: '5px 0 12px' }}>
                   {paymentSession.status === 'PENDING'
-                    ? 'Complete your ₹40 UPI payment'
+                    ? `Complete your ₹${paymentSession.amount} UPI payment`
                     : paymentSession.status === 'UTR_SUBMITTED'
                       ? 'Payment submitted. Waiting for admin verification.'
                       : paymentSession.status === 'VERIFIED'
@@ -787,14 +642,14 @@ export default function Register() {
                       size={220}
                       level="M"
                       includeMargin
-                      title="UPI payment QR for exactly ₹40"
+                      title={`UPI payment QR for ₹${paymentSession.amount}`}
                       style={{ maxWidth: '100%', background: '#ffffff', padding: '8px', borderRadius: '8px' }}
                     />
                     <div style={{ color: '#ffffff', fontSize: '14px', fontWeight: 700, margin: '12px 0 4px' }}>
                       UPI ID: {paymentSession.upiId}
                     </div>
                     <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                      Payee: {paymentSession.displayName} · Amount: ₹40
+                      Payee: {paymentSession.displayName} · Amount: ₹{paymentSession.amount}
                     </div>
                     {paymentSession.reservationExpiresAt && (
                       <div style={{ color: 'var(--text-dim)', fontSize: '12px', marginTop: '5px' }}>
@@ -869,7 +724,7 @@ export default function Register() {
 
             <ol style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.8, margin: '20px 0 0' }}>
               <li>Open a UPI app and scan the QR code or use the UPI ID.</li>
-              <li>Pay exactly ₹40 and copy the UTR / transaction reference.</li>
+              <li>Pay exactly ₹{paymentSession?.amount ?? tournament.entryFee} and copy the UTR / transaction reference.</li>
               <li>Enter only the UTR here. Never enter your UPI PIN, OTP, or bank password.</li>
               <li>An admin checks the payment and approves or rejects it manually.</li>
             </ol>
@@ -928,7 +783,8 @@ export default function Register() {
             }}>
               <div style={{ fontSize: '14px', color: '#dddddd' }}>
                 🏆 <strong>Tournament:</strong> {confirmedData.tournamentName}<br />
-                👥 <strong>Squad Captain:</strong> {confirmedData.captainName} (Squad #{confirmedData.squadId})<br />
+                👥 <strong>Squad Captain:</strong> {confirmedData.captainName}<br />
+                🔢 <strong>Assigned Squad:</strong> {confirmedData.squadNumber ? `#${confirmedData.squadNumber}` : 'Pending update in your dashboard'}<br />
                 💳 <strong>Payment Status:</strong> <span style={{ color: 'var(--accent-green)', fontWeight: 'bold' }}>₹{confirmedData.amountPaid} PAID</span><br />
                 📧 <strong>Captain Email:</strong> {confirmedData.captainEmail}
               </div>
@@ -948,7 +804,7 @@ export default function Register() {
                 🚨 ROOM ID & PASSWORD DELIVERY
               </div>
               <p style={{ fontSize: '13px', color: '#d1d5db', margin: 0, lineHeight: 1.5 }}>
-                "Your Room ID and Password will be sent to your verified email <strong>10 minutes before the tournament starts</strong>."
+                Room credentials are sent manually by the administrator to confirmed captains. Check your dashboard and email before match time.
               </p>
             </div>
 

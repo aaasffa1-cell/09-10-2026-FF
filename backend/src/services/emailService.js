@@ -31,12 +31,7 @@ function getTransporter() {
     transporter = {
       sendMail: async (mailOptions) => {
         console.log('\n================== [DEVELOPMENT EMAIL DISPATCH] ==================');
-        console.log(`TO: ${mailOptions.to}`);
-        console.log(`FROM: ${mailOptions.from || process.env.EMAIL_FROM || 'Free Fire Arena <support@freefirearena.com>'}`);
-        console.log(`SUBJECT: ${mailOptions.subject}`);
-        console.log('------------------------------------------------------------------');
-        console.log(`TEXT PREVIEW:\n${mailOptions.text || 'HTML Email Body'}`);
-        console.log('==================================================================\n');
+        console.log('Development email simulated; message body and authentication codes are not logged.');
         return {
           messageId: `mock_msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           response: '250 Mock Email Dispatched (Dev Mode)',
@@ -114,7 +109,7 @@ function getOtpEmailHtml(otp, tournamentName, captainName) {
         <div class="otp-box">
           <div class="otp-code">${escapeHtml(otp)}</div>
         </div>
-        <p class="meta">⏱️ This code will expire in <strong>10 minutes</strong>. Valid for single use only.</p>
+        <p class="meta">This code will expire in <strong>5 minutes</strong>. Valid for single use only.</p>
         <div class="warning">
           ⚠️ <strong>Security Notice:</strong> Never share your verification code with anyone. Free Fire Arena staff will never ask for your OTP.
         </div>
@@ -165,7 +160,7 @@ function getConfirmationEmailHtml(registration, tournament, players) {
     <div class="container">
       <div class="header">
         <h1>REGISTRATION CONFIRMED</h1>
-        <div class="badge">✓ Slot Confirmed (₹${tournament.entry_fee || '40'} Paid)</div>
+        <div class="badge">✓ Slot Confirmed (₹${tournament.entry_fee ?? '—'} Paid)</div>
       </div>
       <div class="content">
         <p style="font-size: 15px; color: #dddddd; margin-top: 0;">
@@ -178,7 +173,7 @@ function getConfirmationEmailHtml(registration, tournament, players) {
             📅 <strong>Date:</strong> ${escapeHtml(new Date(tournament.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }))}<br>
             ⏰ <strong>Start Time:</strong> ${escapeHtml(tournament.start_time)} (IST)<br>
             🏆 <strong>Organizer-funded Winner Prize:</strong> ₹${escapeHtml(tournament.prize_amount)}<br>
-            🎟️ <strong>Registration:</strong> ₹${escapeHtml(tournament.entry_fee || '40')} per team (not used to fund the prize)<br>
+            🎟️ <strong>Registration:</strong> ₹${escapeHtml(tournament.entry_fee ?? '—')} per squad (not used to fund the prize)<br>
             🎟️ <strong>Squad number:</strong> ${registration.squad_number
               ? `Squad ${String(registration.squad_number).padStart(2, '0')}`
               : 'Assigned'}
@@ -218,7 +213,7 @@ function getConfirmationEmailHtml(registration, tournament, players) {
   `;
 }
 
-// 3. Template: Room ID & Password Notification (Sent 10 minutes before match)
+// 3. Template: Room ID & Password Notification
 function getRoomCredentialsEmailHtml(registration, tournament, roomId, roomPassword) {
   return `
   <!DOCTYPE html>
@@ -281,6 +276,7 @@ function getRoomCredentialsEmailHtml(registration, tournament, roomId, roomPassw
             <li>All players must be present in the designated slot before start time.</li>
             <li>Emulators and hacks are strictly prohibited.</li>
           </ul>
+          <p style="color:#ffffff;font-weight:bold">THE TEAM SHOULD GET THEIR PLACES BY GIVEN SQUAD NUMBER ONLY</p>
         </div>
       </div>
       <div class="footer">
@@ -293,10 +289,16 @@ function getRoomCredentialsEmailHtml(registration, tournament, roomId, roomPassw
   `;
 }
 
+function getRoomCredentialsEmailText(registration, tournament, roomId, roomPassword) {
+  const squadName = `Squad ${String(registration.squad_number || 0).padStart(2, '0')}`;
+  const matchDate = new Date(tournament.date).toLocaleDateString('en-IN');
+  return `FREE FIRE ARENA - ROOM CREDENTIALS\n\nTournament: ${tournament.name}\n${squadName}\nMatch date: ${matchDate}\nStart time: ${tournament.start_time} IST\n\nRoom ID: ${roomId}\nRoom password: ${roomPassword}\n\nJoin the room immediately. Do not share credentials.\nTHE TEAM SHOULD GET THEIR PLACES BY GIVEN SQUAD NUMBER ONLY`;
+}
+
 // Email Sender Functions
 async function sendOtpEmail(toEmail, otp, tournamentName, captainName) {
   const html = getOtpEmailHtml(otp, tournamentName, captainName);
-  const text = `Free Fire Arena OTP Verification\n\nYour 6-digit OTP for ${tournamentName} is: ${otp}\n\nThis OTP is valid for 10 minutes.\nDo not share this code with anyone.`;
+  const text = `Free Fire Arena OTP Verification\n\nYour 6-digit OTP for ${tournamentName} is: ${otp}\n\nThis OTP is valid for 5 minutes.\nDo not share this code with anyone.`;
 
   return sendEmail({
     from: process.env.EMAIL_FROM || 'Free Fire Arena <support@freefirearena.com>',
@@ -308,14 +310,14 @@ async function sendOtpEmail(toEmail, otp, tournamentName, captainName) {
 }
 
 async function sendLoginOtpEmail(toEmail, otp) {
-  const text = `Free Fire Arena sign-in\n\nYour one-time sign-in code is ${otp}.\nIt expires in 10 minutes and can only be used once. If you did not request this code, ignore this email.`;
+  const text = `Free Fire Arena sign-in\n\nYour one-time sign-in code is ${otp}.\nIt expires in 5 minutes and can only be used once. If you did not request this code, ignore this email.`;
   const html = `
     <div style="font-family:Arial,sans-serif;background:#0c0d14;color:#fff;padding:28px">
       <div style="max-width:520px;margin:auto;background:#161824;border:1px solid #2a2d3d;border-radius:12px;padding:28px">
         <h1 style="color:#ff5500;font-size:22px">FREE FIRE ARENA</h1>
         <p>Your one-time sign-in code is:</p>
         <p style="font-family:monospace;font-size:34px;font-weight:bold;letter-spacing:8px;color:#ff5500">${escapeHtml(otp)}</p>
-        <p>This code expires in 10 minutes and can only be used once. Do not share it with anyone.</p>
+        <p>This code expires in 5 minutes and can only be used once. Do not share it with anyone.</p>
       </div>
     </div>`;
   return sendEmail({
@@ -329,7 +331,7 @@ async function sendLoginOtpEmail(toEmail, otp) {
 
 async function sendConfirmationEmail(registration, tournament, players) {
   const html = getConfirmationEmailHtml(registration, tournament, players);
-  const text = `Registration Confirmed - ${tournament.name}\n\nCaptain: ${registration.captain_name}\nSquad: ${registration.squad_number ? `Squad ${String(registration.squad_number).padStart(2, '0')}` : 'Assigned'}\nRegistration ID: #${registration.id}\nEntry Fee: ₹${tournament.entry_fee} Paid\n\nRoom ID and Password will be sent in the authorized pre-match window (${tournament.start_time}).`;
+  const text = `Registration Confirmed - ${tournament.name}\n\nCaptain: ${registration.captain_name}\nSquad: ${registration.squad_number ? `Squad ${String(registration.squad_number).padStart(2, '0')}` : 'Assigned'}\nRegistration ID: #${registration.id}\nEntry Fee: ₹${tournament.entry_fee} Paid\n\nRoom ID and Password will be sent manually by the tournament administrator before the match.`;
 
   return sendEmail({
     from: process.env.EMAIL_FROM || 'Free Fire Arena <support@freefirearena.com>',
@@ -344,12 +346,12 @@ async function sendRoomCredentialsEmail(registration, tournament, roomId, roomPa
   const squadName = `Squad ${String(registration.squad_number || 0).padStart(2, '0')}`;
   const matchDate = new Date(tournament.date).toLocaleDateString('en-IN');
   const html = getRoomCredentialsEmailHtml(registration, tournament, roomId, roomPassword);
-  const text = `FREE FIRE ARENA - ROOM CREDENTIALS\n\nTournament: ${tournament.name}\n${squadName}\nMatch date: ${matchDate}\nStart time: ${tournament.start_time} IST\n\nRoom ID: ${roomId}\nRoom password: ${roomPassword}\n\nJoin the room immediately. Do not share credentials.`;
+  const text = getRoomCredentialsEmailText(registration, tournament, roomId, roomPassword);
 
   return sendEmail({
     from: process.env.EMAIL_FROM || 'Free Fire Arena <support@freefirearena.com>',
     to: registration.captain_email,
-    subject: `🚨 ROOM ID & PASSWORD: ${tournament.name} (Match starting in 10 mins)`,
+    subject: `ROOM ID & PASSWORD: ${tournament.name}`,
     text,
     html,
   });
@@ -392,5 +394,7 @@ module.exports = {
   sendLoginOtpEmail,
   sendConfirmationEmail,
   sendRoomCredentialsEmail,
+  getRoomCredentialsEmailHtml,
+  getRoomCredentialsEmailText,
   sendContactMessage,
 };

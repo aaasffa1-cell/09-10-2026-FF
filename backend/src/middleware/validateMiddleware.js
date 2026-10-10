@@ -27,10 +27,10 @@ function validateRegistrationInput(req, res, next) {
     errors.push('Captain Free Fire UID/ID is required (min 3 characters).');
   }
 
-  // Players validation (Squad must have exactly 4 players)
-  if (!Array.isArray(players) || players.length !== 4) {
-    errors.push('Registration must contain exactly 4 players in the squad.');
-  } else {
+  // New registrations need only captain details; legacy four-player payloads remain supported.
+  if (players !== undefined && (!Array.isArray(players) || ![1, 4].includes(players.length))) {
+    errors.push('Provide captain details only, or use the legacy four-player registration format.');
+  } else if (Array.isArray(players)) {
     const ffIds = new Set();
 
     players.forEach((player, index) => {
@@ -64,44 +64,84 @@ function validateRegistrationInput(req, res, next) {
   req.body.captainEmail = captainEmail.trim().toLowerCase();
   req.body.captainPhone = captainPhone.trim();
   req.body.captainFreeFireId = captainFreeFireId.trim();
-  req.body.players = players.map(p => ({
-    fullName: p.fullName.trim(),
-    freeFireId: p.freeFireId.trim(),
-  }));
+  req.body.players = Array.isArray(players)
+    ? players.map(p => ({
+      fullName: p.fullName.trim(),
+      freeFireId: p.freeFireId.trim(),
+    }))
+    : [{ fullName: req.body.captainName, freeFireId: req.body.captainFreeFireId.trim() }];
 
   next();
 }
 
 function validateTournamentInput(req, res, next) {
   const { name, date, startTime, entryFee, prizeAmount, squadSize, maxSlots } = req.body;
+  const isCreate = req.method === 'POST';
+  const dateIsValid = typeof date === 'string' && !Number.isNaN(Date.parse(date));
   const errors = [];
 
-  if (!name || typeof name !== 'string' || name.trim().length < 3) {
+  if ((isCreate && (!name || typeof name !== 'string')) ||
+      (name !== undefined && (typeof name !== 'string' || name.trim().length < 3 || name.trim().length > 150))) {
     errors.push('Tournament name is required (min 3 characters).');
   }
 
-  if (!date || isNaN(Date.parse(date))) {
+  if ((isCreate && !date) || (date !== undefined && !dateIsValid)) {
     errors.push('Valid tournament date is required.');
   }
 
-  if (!startTime || typeof startTime !== 'string' || startTime.trim().length < 2) {
+  if ((isCreate && !startTime) ||
+      (startTime !== undefined && (typeof startTime !== 'string' || startTime.trim().length < 2 || startTime.trim().length > 30))) {
     errors.push('Valid tournament start time is required (e.g. "08:00 PM").');
   }
 
-  if (entryFee !== undefined && Number(entryFee) !== 40) {
-    errors.push('The team registration fee is fixed at ₹40.');
+  if ((isCreate && entryFee === undefined) ||
+      (entryFee !== undefined && (!Number.isFinite(Number(entryFee)) || Number(entryFee) <= 0))) {
+    errors.push('Entry fee must be a valid amount greater than zero.');
   }
 
-  if (prizeAmount !== undefined && (isNaN(Number(prizeAmount)) || Number(prizeAmount) < 0)) {
+  if ((isCreate && (prizeAmount === undefined || String(prizeAmount).trim() === '')) ||
+      (prizeAmount !== undefined && (!Number.isFinite(Number(prizeAmount)) || Number(prizeAmount) < 0))) {
     errors.push('Prize amount must be a valid non-negative number.');
   }
 
-  if (squadSize !== undefined && (isNaN(parseInt(squadSize, 10)) || parseInt(squadSize, 10) !== 4)) {
+  if (squadSize !== undefined && (!Number.isInteger(Number(squadSize)) || Number(squadSize) !== 4)) {
     errors.push('Squad size must be 4 for standard squad BR tournaments.');
   }
 
-  if (maxSlots !== undefined && (isNaN(parseInt(maxSlots, 10)) || parseInt(maxSlots, 10) < 1 || parseInt(maxSlots, 10) > 13)) {
-    errors.push('Maximum capacity is 13 squads (52 players).');
+  if ((isCreate && maxSlots === undefined) ||
+      (maxSlots !== undefined && (!Number.isInteger(Number(maxSlots)) || Number(maxSlots) < 1 || Number(maxSlots) > 10000))) {
+    errors.push('Maximum squad capacity must be a whole number between 1 and 10,000.');
+  }
+
+  const { registrationDeadline } = req.body;
+  if (isCreate && (typeof registrationDeadline !== 'string' || !registrationDeadline.trim())) {
+    errors.push('Registration deadline is required.');
+  }
+  if (registrationDeadline !== undefined && registrationDeadline !== null && registrationDeadline !== '' &&
+      (typeof registrationDeadline !== 'string' || Number.isNaN(Date.parse(registrationDeadline)))) {
+    errors.push('Enter a valid registration deadline.');
+  } else if (registrationDeadline && dateIsValid) {
+    const matchDate = new Date(date).toISOString().slice(0, 10);
+    const deadlineDate = new Date(registrationDeadline).toISOString().slice(0, 10);
+    if (deadlineDate > matchDate) errors.push('The registration deadline must be on or before the match date.');
+  }
+
+  for (const [field, maxLength] of [
+    ['description', 5000],
+    ['rules', 10000],
+    ['map', 100],
+    ['gameMode', 100],
+    ['eligibilityRequirements', 5000],
+  ]) {
+    const value = req.body[field];
+    if (isCreate && ['rules', 'map', 'gameMode', 'eligibilityRequirements'].includes(field) &&
+        (typeof value !== 'string' || !value.trim())) {
+      errors.push(`${field} is required.`);
+    }
+    if (value !== undefined && value !== null &&
+        (typeof value !== 'string' || value.length > maxLength)) {
+      errors.push(`${field} must be text with no more than ${maxLength} characters.`);
+    }
   }
 
   if (errors.length > 0) {

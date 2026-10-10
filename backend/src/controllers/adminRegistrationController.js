@@ -120,7 +120,10 @@ async function getRegistrations(req, res) {
 async function getDashboardStats(req, res) {
   try {
     const totalTournamentsRes = await query(`SELECT COUNT(id) as count FROM tournaments`);
-    const upcomingTournamentsRes = await query(`SELECT COUNT(id) as count FROM tournaments WHERE date >= CURRENT_DATE AND registration_open = TRUE`);
+    const upcomingTournamentsRes = await query(
+      `SELECT COUNT(id) AS count FROM tournaments
+       WHERE date >= CURRENT_DATE AND tournament_status = 'ACTIVE'`
+    );
     const totalConfirmedRes = await query(`SELECT COUNT(id) as count FROM registrations WHERE status = 'CONFIRMED'`);
     const pendingRegistrationsRes = await query(`SELECT COUNT(id) as count FROM registrations WHERE status IN ('PENDING', 'OTP_VERIFIED', 'PAYMENT_PENDING')`);
     
@@ -130,7 +133,7 @@ async function getDashboardStats(req, res) {
        WHERE status = 'CONFIRMED' AND payment_status IN ('PAID', 'VERIFIED')`
     );
     const pendingPaymentsRes = await query(
-      `SELECT COUNT(id) AS count FROM payments WHERE status IN ('PENDING', 'PROCESSING', 'UTR_SUBMITTED')`
+      `SELECT COUNT(id) AS count FROM payments WHERE status = 'UTR_SUBMITTED'`
     );
     const failedPaymentsRes = await query(
       `SELECT COUNT(id) AS count FROM payments WHERE status IN ('FAILED', 'CANCELLED', 'REJECTED')`
@@ -143,8 +146,14 @@ async function getDashboardStats(req, res) {
       WHERE status IN ('SUCCESS', 'VERIFIED')
     `);
 
-    // Email logs count
-    const emailLogsRes = await query(`SELECT COUNT(id) as count FROM email_logs WHERE status = 'SENT'`);
+    const emailLogsRes = await query(
+      `SELECT
+         COUNT(CASE WHEN status IN ('EMAIL_SENT', 'SENT') THEN 1 END) AS sent,
+         COUNT(CASE WHEN status IN ('EMAIL_FAILED', 'FAILED') THEN 1 END) AS failed,
+         COUNT(CASE WHEN status IN ('EMAIL_PENDING', 'PENDING') THEN 1 END) AS pending
+       FROM email_logs
+       WHERE email_type = 'ROOM_CREDENTIALS'`
+    );
 
     return res.json({
       success: true,
@@ -159,7 +168,10 @@ async function getDashboardStats(req, res) {
         pendingRegistrations: parseInt(pendingRegistrationsRes.rows[0].count || '0', 10),
         totalRevenue: parseFloat(revenueRes.rows[0].total_revenue || '0'),
         totalCollected: parseFloat(revenueRes.rows[0].total_revenue || '0'),
-        roomEmailsSent: parseInt(emailLogsRes.rows[0].count || '0', 10),
+        upcomingMatches: parseInt(upcomingTournamentsRes.rows[0].count || '0', 10),
+        roomEmailsSent: parseInt(emailLogsRes.rows[0].sent || '0', 10),
+        roomEmailsFailed: parseInt(emailLogsRes.rows[0].failed || '0', 10),
+        roomEmailsPending: parseInt(emailLogsRes.rows[0].pending || '0', 10),
       },
     });
   } catch (error) {

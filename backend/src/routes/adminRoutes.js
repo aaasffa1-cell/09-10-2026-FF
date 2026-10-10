@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { login, logout, getMe } = require('../controllers/adminAuthController');
+const { requestOtp, verifyOtp, logout, getMe } = require('../controllers/adminAuthController');
 const { 
   getAdminTournaments, 
   createTournament, 
@@ -23,11 +23,13 @@ const {
   triggerRoomEmailsManual 
 } = require('../controllers/roomController');
 const { requireAdminAuth } = require('../middleware/authMiddleware');
+const { getAdminResults, saveTournamentResult } = require('../controllers/resultController');
 const { validateTournamentInput } = require('../middleware/validateMiddleware');
 const { adminLoginLimiter } = require('../middleware/rateLimiter');
 
 // Public admin authentication
-router.post('/login', adminLoginLimiter, login);
+router.post('/request-otp', adminLoginLimiter, requestOtp);
+router.post('/verify-otp', adminLoginLimiter, verifyOtp);
 
 // Protected Admin Routes
 router.use(requireAdminAuth);
@@ -35,11 +37,13 @@ router.use(requireAdminAuth);
 router.post('/logout', logout);
 router.get('/me', getMe);
 router.get('/stats', getDashboardStats);
+router.get('/results', getAdminResults);
+router.put('/tournaments/:tournamentId/results', saveTournamentResult);
 
 // Tournaments Management
 router.get('/tournaments', getAdminTournaments);
 router.post('/tournaments', validateTournamentInput, createTournament);
-router.put('/tournaments/:id', updateTournament);
+router.put('/tournaments/:id', validateTournamentInput, updateTournament);
 router.delete('/tournaments/:id', deleteTournament);
 
 // Registrations Management

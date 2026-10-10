@@ -5,7 +5,7 @@ const {
   createPaymentRequest,
   submitUtr,
 } = require('../services/manualUpiPaymentService');
-const { parseTournamentDateTime, checkAndSendRoomEmails } = require('../jobs/roomScheduler');
+const { checkAndSendRoomEmails } = require('../jobs/roomScheduler');
 const bcrypt = require('bcryptjs');
 
 function getNearFutureTimeFormatted(minutesAhead = 8) {
@@ -88,17 +88,18 @@ async function runAcceptanceTest() {
     // 4. Admin Create Custom Test Tournament with start time ~8 mins in future (in 10-min email window)
     const testMatchTime = getNearFutureTimeFormatted(8);
     console.log(`\n[Test 4] Admin Creating Test Tournament with start_time: ${testMatchTime} (in ~8 mins)...`);
+    const testEntryFee = 17.5;
     const createTourneyRes = await query(`
       INSERT INTO tournaments (name, description, date, start_time, entry_fee, prize_amount, squad_size, max_slots, rules, registration_open)
-      VALUES ($1, $2, CURRENT_DATE, $3, 40.00, 300.00, 4, 2, 'Fair play only. Mobile devices.', TRUE)
+      VALUES ($1, $2, CURRENT_DATE, $3, $4, 300.00, 4, 2, 'Fair play only. Mobile devices.', TRUE)
       RETURNING *
-    `, ['Free Fire BR Acceptance Cup', 'Special 2-Slot Acceptance Test Tournament', testMatchTime]);
+    `, ['Free Fire BR Acceptance Cup', 'Special 2-Slot Acceptance Test Tournament', testMatchTime, testEntryFee]);
     const testTourney = createTourneyRes.rows[0];
     console.log(`✓ Created test tournament #${testTourney.id} ("${testTourney.name}") with max_slots: ${testTourney.max_slots}`);
 
     // 5. Squad Registration (4 Players)
     console.log('\n[Test 5] Player registering 4-player squad...');
-    const captainEmail = 'killer.captain@example.com';
+    const captainEmail = `captain-${Date.now()}@example.com`;
     const regRes = await query(`
       INSERT INTO registrations
         (tournament_id, captain_name, captain_email, captain_phone, status, email_verified, payment_status, reservation_expires_at)
@@ -126,7 +127,7 @@ async function runAcceptanceTest() {
     // 6. OTP Generation & Verification
     console.log('\n[Test 6] Testing 6-Digit OTP Generation & Bcrypt Verification...');
     const otpResult = await createOtpForRegistration(registrationId, captainEmail);
-    console.log(`  Generated 6-digit OTP: ${otpResult.otp}`);
+    console.log('  Generated six-digit OTP in memory for this isolated test.');
     
     // Attempt with invalid OTP first
     const invalidVerify = await verifyOtpForRegistration(registrationId, '000000');
@@ -144,21 +145,21 @@ async function runAcceptanceTest() {
     console.log('✓ OTP single-use protection verified (cannot be reused).');
 
     // 7. UPI payment request and manual UTR review
-    console.log('\n[Test 7] Creating a ₹40 UPI request and submitting a test-only UTR...');
+    console.log(`\n[Test 7] Creating a ₹${testEntryFee} UPI request and submitting a test-only UTR...`);
     if (!process.env.TEST_UPI_ID) {
       throw new Error('Set TEST_UPI_ID to an explicitly selected UPI handle for this local acceptance test.');
     }
     process.env.UPI_ID = process.env.TEST_UPI_ID;
     process.env.UPI_DISPLAY_NAME = process.env.TEST_UPI_DISPLAY_NAME || 'Free Fire Arena Test';
     const payment = await createPaymentRequest(registrationId);
-    if (payment.amount !== 40 || payment.status !== 'PENDING' || !payment.upiUri.startsWith('upi://pay?')) {
-      throw new Error('The payment request did not match the required ₹40 UPI flow.');
+    if (payment.amount !== testEntryFee || payment.status !== 'PENDING' || !payment.upiUri.startsWith('upi://pay?')) {
+      throw new Error('The payment request did not match the configured tournament entry fee.');
     }
     const submittedUtr = await submitUtr(registrationId, `TEST${Date.now()}1234`);
     if (submittedUtr.status !== 'UTR_SUBMITTED') {
       throw new Error('The UTR was not recorded for admin review.');
     }
-    console.log('✓ UPI request is ₹40 and the test UTR remains unverified pending manual admin review.');
+    console.log(`✓ UPI request is ₹${testEntryFee}; the test UTR remains unverified pending manual admin review.`);
 
     // 8. Slot Count Verification
     console.log('\n[Test 8] Verifying UTR submission did not confirm the squad...');
@@ -187,14 +188,21 @@ async function runAcceptanceTest() {
     }
     console.log('✓ Verified: Public tournament model does NOT expose room credentials.');
 
-    // 10. Scheduler must not send credentials to an unconfirmed team.
-    console.log('\n[Test 10] Verifying room credentials are not sent before verified payment...');
-    await checkAndSendRoomEmails();
+    // 10. Time-based invocation must never dispatch credentials automatically.
+    console.log('\n[Test 10] Verifying room credentials require a manual admin action...');
+    let automaticDispatchBlocked = false;
+    try {
+      await checkAndSendRoomEmails();
+    } catch (error) {
+      if (error.code !== 'MANUAL_DISPATCH_REQUIRED') throw error;
+      automaticDispatchBlocked = true;
+    }
+    if (!automaticDispatchBlocked) throw new Error('Automatic room credential delivery was not blocked.');
     const emailLogs = await query(`
       SELECT * FROM email_logs WHERE tournament_id = $1 AND registration_id = $2 AND email_type = 'ROOM_CREDENTIALS'
     `, [testTourney.id, registrationId]);
-    if (emailLogs.rows.length !== 0) throw new Error('Room credentials were sent to an unconfirmed squad.');
-    console.log('✓ Unpaid registration did not receive room credentials.');
+    if (emailLogs.rows.length !== 0) throw new Error('The automatic dispatch attempt created a credential email.');
+    console.log('✓ Automatic dispatch is disabled; credentials can only be sent by the admin action.');
 
     console.log('\n======================================================');
     console.log('    ✓✓ ALL ACCEPTANCE TESTS PASSED SUCCESSFULLY! ✓✓    ');

@@ -48,7 +48,7 @@ export default function Rules() {
           </div>
 
           <ul style={{ paddingLeft: '20px', color: '#d1d5db', fontSize: '14px', lineHeight: '1.8' }}>
-            <li><strong>10-Minute Delivery:</strong> Custom Room ID and Password will be emailed automatically to the verified captain's email address <strong>exactly 10 minutes prior</strong> to match start time.</li>
+            <li><strong>Room credentials:</strong> The administrator manually emails credentials to confirmed captains before the match. Check your dashboard and email.</li>
             <li><strong>Confidentiality:</strong> Do not share room credentials with non-squad members. Leaking room credentials will lead to disqualification.</li>
             <li><strong>Slot Position:</strong> Squads must sit in their designated slot number as specified in their confirmation.</li>
             <li><strong>Punctuality:</strong> Matches start strictly on time. If a player or squad fails to join before match launch, the slot is forfeited and no refund is issued.</li>

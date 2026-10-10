@@ -4,14 +4,11 @@ import { fetchAdminStats, fetchAdminRegistrations } from '../../services/api';
 import { 
   Trophy, 
   Users, 
-  IndianRupee, 
   MailCheck, 
   Clock, 
   PlusCircle, 
   KeyRound, 
   ChevronRight, 
-  ShieldCheck, 
-  CheckCircle2 
 } from 'lucide-react';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -19,6 +16,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [recentRegistrations, setRecentRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -29,7 +27,7 @@ export default function AdminDashboard() {
         setStats(statsData);
         setRecentRegistrations(regsData.slice(0, 5));
       })
-      .catch(err => console.error('Failed to load admin dashboard:', err))
+      .catch(err => setLoadError(err.message || 'Failed to load admin dashboard.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -51,7 +49,7 @@ export default function AdminDashboard() {
             <div className="badge badge-gold" style={{ marginBottom: '8px' }}>
               ADMINISTRATOR DASHBOARD
             </div>
-            <h1 style={{ fontSize: 'clamp(24px, 4vw, 36px)', color: '#ffffff' }}>
+            <h1 style={{ fontSize: 'clamp(24px, 4vw, 36px)', color: 'var(--text-main)' }}>
               TOURNAMENT OVERVIEW
             </h1>
           </div>
@@ -61,79 +59,100 @@ export default function AdminDashboard() {
               <PlusCircle size={16} /> Manage Tournaments
             </Link>
             <Link to="/admin/room-credentials" className="btn btn-secondary btn-sm">
-              <KeyRound size={16} /> Room Credentials
+              <KeyRound size={16} /> Match Control
+            </Link>
+            <Link to="/admin/results" className="btn btn-secondary btn-sm">
+              <Trophy size={16} /> Results
             </Link>
           </div>
         </div>
 
+        {loadError && <div className="alert alert-error" role="alert">{loadError}</div>}
+
         {/* Stats Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
           gap: '20px',
           marginBottom: '40px',
         }}>
-          {/* Stat 1: Total Tournaments */}
+          {/* Stat 1: Registered squads */}
           <div className="ffa-card" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
-                Total Tournaments
+                Registered Squads
               </span>
               <Trophy size={20} color="var(--accent-orange)" />
             </div>
-            <div style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff' }}>
-              {stats?.totalTournaments || 0}
+            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--text-main)' }}>
+              {stats?.totalTeams || 0}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--accent-green)', marginTop: '4px' }}>
-              {stats?.upcomingTournaments || 0} active / upcoming
+              Across all tournaments
             </div>
           </div>
 
-          {/* Stat 2: Total Confirmed Squads */}
+          {/* Stat 2: Payments awaiting verification */}
           <div className="ffa-card" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
-                Confirmed Squads
+                Awaiting Verification
               </span>
-              <Users size={20} color="var(--accent-cyan)" />
+              <Clock size={20} color="var(--accent-cyan)" />
             </div>
-            <div style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff' }}>
+            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--text-main)' }}>
+              {stats?.pendingPayments || 0}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              UTR submissions needing review
+            </div>
+          </div>
+
+          {/* Stat 3: Confirmed slots */}
+          <div className="ffa-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
+                Confirmed Slots
+              </span>
+              <Users size={20} color="var(--accent-green)" />
+            </div>
+            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--text-main)' }}>
               {stats?.totalConfirmedSquads || 0}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              {stats?.pendingRegistrations || 0} in checkout / pending
+              Payment verified
             </div>
           </div>
 
-          {/* Stat 3: Total Revenue */}
+          {/* Stat 4: Upcoming matches */}
           <div className="ffa-card" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
-                Revenue Collected
+                Upcoming Matches
               </span>
-              <IndianRupee size={20} color="var(--accent-green)" />
+              <Trophy size={20} color="var(--accent-gold)" />
             </div>
-            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--accent-green)' }}>
-              ₹{stats?.totalRevenue || 0}
+            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--text-main)' }}>
+              {stats?.upcomingMatches || 0}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              From confirmed entry fees
+            <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '4px' }}>
+              Active tournament dates
             </div>
           </div>
 
-          {/* Stat 4: Room Emails Sent */}
+          {/* Stat 5: Match credential delivery */}
           <div className="ffa-card" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
-                Room Emails Sent
+                Credential Emails
               </span>
               <MailCheck size={20} color="var(--accent-gold)" />
             </div>
-            <div style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff' }}>
-              {stats?.roomEmailsSent || 0}
+            <div style={{ fontSize: '32px', fontWeight: 900, color: 'var(--text-main)' }}>
+              {stats?.roomEmailsSent || 0} sent
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '4px' }}>
-              Automated scheduler logs
+              {stats?.roomEmailsFailed || 0} failed · {stats?.roomEmailsPending || 0} pending
             </div>
           </div>
         </div>
@@ -143,7 +162,7 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
             <div>
               <div className="badge badge-gold" style={{ marginBottom: '6px' }}>PAYMENT MANAGEMENT</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>₹40 team registration fees only; tournament prizes are separately organizer-funded.</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Entry fees are set per tournament; prizes are separately organizer-funded.</div>
             </div>
             <Link to="/admin/registrations" className="btn btn-secondary btn-sm">View payment records</Link>
           </div>
@@ -155,9 +174,9 @@ export default function AdminDashboard() {
               ['FAILED PAYMENTS', stats?.failedPayments],
               ['TOTAL COLLECTED', `₹${stats?.totalCollected || 0}`],
             ].map(([label, value]) => (
-              <div key={label} style={{ background: '#0d0f17', padding: '14px', borderRadius: '8px' }}>
+              <div key={label} style={{ background: 'var(--bg-card-hover)', padding: '14px', borderRadius: '8px' }}>
                 <div style={{ color: 'var(--text-dim)', fontSize: '11px', fontWeight: 700 }}>{label}</div>
-                <div style={{ color: '#fff', fontSize: '23px', fontWeight: 900, marginTop: '5px' }}>{value || 0}</div>
+                <div style={{ color: 'var(--text-main)', fontSize: '23px', fontWeight: 900, marginTop: '5px' }}>{value || 0}</div>
               </div>
             ))}
           </div>
@@ -172,7 +191,7 @@ export default function AdminDashboard() {
           
           {/* Quick Management Navigation */}
           <div className="ffa-card" style={{ padding: '30px' }}>
-            <h2 style={{ fontSize: '18px', color: '#ffffff', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '18px', color: 'var(--text-main)', marginBottom: '20px' }}>
               QUICK MODULES
             </h2>
 
@@ -184,10 +203,10 @@ export default function AdminDashboard() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '16px',
-                  background: '#0d0f17',
-                  border: '1px solid #1f2336',
+                  background: 'var(--bg-card-hover)',
+                  border: '1px solid var(--border-card)',
                   borderRadius: 'var(--radius-md)',
-                  color: '#ffffff',
+                  color: 'var(--text-main)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -207,10 +226,10 @@ export default function AdminDashboard() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '16px',
-                  background: '#0d0f17',
-                  border: '1px solid #1f2336',
+                  background: 'var(--bg-card-hover)',
+                  border: '1px solid var(--border-card)',
                   borderRadius: 'var(--radius-md)',
-                  color: '#ffffff',
+                  color: 'var(--text-main)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -230,17 +249,17 @@ export default function AdminDashboard() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '16px',
-                  background: '#0d0f17',
-                  border: '1px solid #1f2336',
+                  background: 'var(--bg-card-hover)',
+                  border: '1px solid var(--border-card)',
                   borderRadius: 'var(--radius-md)',
-                  color: '#ffffff',
+                  color: 'var(--text-main)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <KeyRound color="var(--accent-gold)" size={20} />
                   <div>
                     <div style={{ fontSize: '15px', fontWeight: 700 }}>Custom Room Credentials</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Set Room ID & Pass for automated 10-min email dispatch</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Set room details and manually send to confirmed captains</div>
                   </div>
                 </div>
                 <ChevronRight size={18} color="var(--text-dim)" />
@@ -251,7 +270,7 @@ export default function AdminDashboard() {
           {/* Recent Confirmed Squads */}
           <div className="ffa-card" style={{ padding: '30px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '18px', color: '#ffffff' }}>
+              <h2 style={{ fontSize: '18px', color: 'var(--text-main)' }}>
                 RECENT CONFIRMED SQUADS
               </h2>
               <Link to="/admin/registrations" style={{ fontSize: '12px', color: 'var(--accent-orange)', fontWeight: 700 }}>
@@ -269,8 +288,8 @@ export default function AdminDashboard() {
                   <div
                     key={r.id}
                     style={{
-                      background: '#0d0f17',
-                      border: '1px solid #1e2236',
+                      background: 'var(--bg-card-hover)',
+                      border: '1px solid var(--border-card)',
                       borderRadius: 'var(--radius-md)',
                       padding: '14px 16px',
                       display: 'flex',
@@ -279,7 +298,7 @@ export default function AdminDashboard() {
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-main)' }}>
                         {r.captain_name} <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>(#{r.id})</span>
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>

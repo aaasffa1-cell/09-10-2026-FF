@@ -5,7 +5,6 @@ const helmet = require('helmet');
 const { initDb, runMigrations } = require('./database/db');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { getSessionSecret } = require('./middleware/authMiddleware');
-const { startRoomScheduler } = require('./jobs/roomScheduler');
 
 const tournamentRoutes = require('./routes/tournamentRoutes');
 const registrationRoutes = require('./routes/registrationRoutes');
@@ -74,27 +73,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Cron Endpoint (For Vercel Cron or external scheduler pingers)
-const { checkAndSendRoomEmails } = require('./jobs/roomScheduler');
+// Keep the old endpoint explicit for configured cron clients without dispatching credentials automatically.
 app.all('/api/cron/check-rooms', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (process.env.NODE_ENV === 'production' && !process.env.CRON_SECRET) {
-      return res.status(503).json({ success: false, error: 'Cron authentication is not configured.' });
-    }
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return res.status(401).json({ success: false, error: 'Unauthorized cron request.' });
-    }
-    await checkAndSendRoomEmails();
-    res.json({
-      success: true,
-      message: 'Room credentials check executed successfully.',
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error('[Cron Error]', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'Automatic room credential delivery is disabled. Use the admin match-control action.',
+  });
 });
 
 // Mount Routes
@@ -150,9 +134,6 @@ async function startServer() {
     // Initialize Database and Run Schema Migrations
     await initDb();
     await runMigrations();
-
-    // Start Server-Side Scheduler
-    startRoomScheduler();
 
     app.listen(PORT, () => {
       console.log(`[Server] Express API server running on http://localhost:${PORT}`);

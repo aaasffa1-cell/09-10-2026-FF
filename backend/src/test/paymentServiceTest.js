@@ -6,6 +6,7 @@ const { newDb } = require('pg-mem');
 const db = require('../database/db');
 const { migratePaymentSchema, migrateManualUpiReview } = require('../database/paymentMigration');
 const { migrateCustomerAuthAndSquads } = require('../database/customerAuthAndSquadsMigration');
+const { migrateTournamentRemodel } = require('../database/remodelMigration');
 
 let testPool;
 db.getClient = () => testPool.connect();
@@ -21,15 +22,13 @@ const {
 
 const originalUpiId = process.env.UPI_ID;
 const originalUpiName = process.env.UPI_DISPLAY_NAME;
-const originalFee = process.env.REGISTRATION_FEE;
 const originalCurrency = process.env.CURRENCY;
 process.env.UPI_ID = 'arena.test@upi';
 process.env.UPI_DISPLAY_NAME = 'Free Fire Arena Test';
-process.env.REGISTRATION_FEE = '40';
 process.env.CURRENCY = 'INR';
 
 async function createTestDatabase() {
-  const memoryDatabase = newDb();
+  const memoryDatabase = newDb({ noAstCoverageCheck: true });
   const Pool = memoryDatabase.adapters.createPg().Pool;
   testPool = new Pool();
   const schema = fs.readFileSync(path.join(__dirname, '..', 'database', 'schema.sql'), 'utf8');
@@ -38,6 +37,7 @@ async function createTestDatabase() {
   await migrateManualUpiReview(testPool);
   await migrateManualUpiReview(testPool);
   await migrateCustomerAuthAndSquads(testPool);
+  await migrateTournamentRemodel(testPool);
   const admin = await testPool.query(
     `INSERT INTO admins (email, password_hash) VALUES ('admin@example.com', 'test-hash') RETURNING id`
   );
@@ -70,11 +70,12 @@ async function createRegistration(tournamentId, captain, playerCount = 4) {
   return registrationId;
 }
 
-test('configuration creates a local UPI QR URI for exactly ₹40 without a gateway', async () => {
+test('configuration uses the selected tournament fee for its local UPI QR URI', async () => {
   await createTestDatabase();
+  await testPool.query(`UPDATE tournaments SET entry_fee = 27.50 WHERE id = 1`);
   const registrationId = await createRegistration(1, 'Captain One');
   const result = await createPaymentRequest(registrationId);
-  assert.equal(result.amount, 40);
+  assert.equal(result.amount, 27.5);
   assert.equal(result.currency, 'INR');
   assert.equal(result.paymentMethod, 'UPI_QR');
   assert.equal(result.status, 'PENDING');
@@ -83,12 +84,12 @@ test('configuration creates a local UPI QR URI for exactly ₹40 without a gatew
   assert.equal(uri.protocol, 'upi:');
   assert.equal(uri.hostname, 'pay');
   assert.equal(uri.searchParams.get('pa'), 'arena.test@upi');
-  assert.equal(uri.searchParams.get('am'), '40.00');
+  assert.equal(uri.searchParams.get('am'), '27.50');
   assert.equal(uri.searchParams.get('cu'), 'INR');
 
   const payment = await testPool.query(`SELECT amount, status, provider, payment_method FROM payments`);
   assert.deepEqual(payment.rows[0], {
-    amount: 40,
+    amount: 27.5,
     status: 'PENDING',
     provider: 'manual_upi',
     payment_method: 'UPI_QR',
@@ -99,7 +100,7 @@ test('configuration creates a local UPI QR URI for exactly ₹40 without a gatew
   await testPool.end();
 });
 
-test('payment setup fails closed when UPI ID or fixed fee configuration is invalid', async () => {
+test('payment setup fails closed when UPI or currency configuration is invalid', async () => {
   await createTestDatabase();
   const registrationId = await createRegistration(1, 'Captain Missing UPI');
   const configuredUpiId = process.env.UPI_ID;
@@ -108,11 +109,11 @@ test('payment setup fails closed when UPI ID or fixed fee configuration is inval
     error instanceof ManualPaymentError && error.code === 'UPI_NOT_CONFIGURED'
   ));
   process.env.UPI_ID = configuredUpiId;
-  process.env.REGISTRATION_FEE = '10';
+  process.env.CURRENCY = 'USD';
   await assert.rejects(createPaymentRequest(registrationId), (error) => (
     error instanceof ManualPaymentError && error.code === 'UPI_NOT_CONFIGURED'
   ));
-  process.env.REGISTRATION_FEE = '40';
+  process.env.CURRENCY = 'INR';
   await testPool.end();
 });
 
@@ -212,6 +213,10 @@ test('only admin review verifies or rejects, and review plus registration update
     DROP INDEX idx_payments_one_active_attempt_per_registration;
     DROP INDEX idx_payments_one_success_per_registration;
   `);
+  await testPool.query(
+    `UPDATE registrations SET reservation_expires_at = $1 WHERE id = $2`,
+    [new Date(Date.now() - 60_000), rejectedRegistrationId]
+  );
   const corrected = await submitUtr(rejectedRegistrationId, '667788990011');
   assert.equal(corrected.status, 'UTR_SUBMITTED');
   const events = await testPool.query(
@@ -229,10 +234,10 @@ test('only admin review verifies or rejects, and review plus registration update
   await testPool.end();
 });
 
-test('registration must contain exactly four players and the stored tournament fee must be ₹40', async () => {
+test('captain-only registration uses its tournament fee and rejects registrations missing captain data', async () => {
   await createTestDatabase();
-  const shortSquad = await createRegistration(1, 'Captain Seven', 3);
-  await assert.rejects(createPaymentRequest(shortSquad), (error) => (
+  const missingCaptain = await createRegistration(1, 'Captain Seven', 0);
+  await assert.rejects(createPaymentRequest(missingCaptain), (error) => (
     error instanceof ManualPaymentError && error.code === 'INVALID_REGISTRATION'
   ));
   const tournament = await testPool.query(
@@ -240,15 +245,14 @@ test('registration must contain exactly four players and the stored tournament f
      VALUES ('Wrong fee', CURRENT_DATE, '08:00 PM', 10, 300) RETURNING id`
   );
   const wrongFeeRegistration = await createRegistration(tournament.rows[0].id, 'Captain Eight');
-  await assert.rejects(createPaymentRequest(wrongFeeRegistration), (error) => (
-    error instanceof ManualPaymentError && error.code === 'INVALID_REGISTRATION'
-  ));
-  await assert.rejects(testPool.query(
-    `INSERT INTO payments
-       (registration_id, tournament_id, order_id, amount, currency, status, payment_method, provider)
-     VALUES ($1, $2, 'bad-amount', 10, 'INR', 'PENDING', 'UPI_QR', 'manual_upi')`,
-    [wrongFeeRegistration, tournament.rows[0].id]
-  ));
+  const payment = await createPaymentRequest(wrongFeeRegistration);
+  assert.equal(payment.amount, 10);
+  assert.equal(new URL(payment.upiUri).searchParams.get('am'), '10.00');
+  const paymentRecord = await testPool.query(
+    `SELECT amount FROM payments WHERE registration_id = $1`,
+    [wrongFeeRegistration]
+  );
+  assert.equal(Number(paymentRecord.rows[0].amount), 10);
   await testPool.end();
 });
 
@@ -285,8 +289,9 @@ test('concurrent payment confirmations receive unique ordered squad numbers and 
   await testPool.end();
 });
 
-test('13 verified four-player squads fill exactly 52 player slots', async () => {
+test('configured capacity controls verified squad slots independently of player count', async () => {
   await createTestDatabase();
+  await testPool.query(`UPDATE tournaments SET max_slots = 13 WHERE id = 1`);
   const registrationIds = [];
   const paymentIds = [];
   for (let squad = 1; squad <= 14; squad += 1) {
@@ -380,8 +385,6 @@ test.after(() => {
   else process.env.UPI_ID = originalUpiId;
   if (originalUpiName === undefined) delete process.env.UPI_DISPLAY_NAME;
   else process.env.UPI_DISPLAY_NAME = originalUpiName;
-  if (originalFee === undefined) delete process.env.REGISTRATION_FEE;
-  else process.env.REGISTRATION_FEE = originalFee;
   if (originalCurrency === undefined) delete process.env.CURRENCY;
   else process.env.CURRENCY = originalCurrency;
 });

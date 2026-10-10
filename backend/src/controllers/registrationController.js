@@ -23,7 +23,7 @@ async function recordOtpEmailAttempt(registrationId, tournamentId, email, status
 
 // POST /api/registrations - Step 1: Submit Squad & Generate OTP
 async function createRegistration(req, res) {
-  const { tournamentId, captainName, captainEmail, captainPhone, captainFreeFireId, players } = req.body;
+  const { tournamentId, captainName, captainEmail, captainPhone, captainFreeFireId, players = [] } = req.body;
   if (String(req.user.email).toLowerCase() !== String(captainEmail).toLowerCase()) {
     return res.status(403).json({ success: false, error: 'Register using the email address you signed in with.' });
   }
@@ -48,7 +48,8 @@ async function createRegistration(req, res) {
 
     const tournament = tourneyRes.rows[0];
 
-    if (!tournament.registration_open) {
+    if (!tournament.registration_open || tournament.tournament_status === 'CANCELLED' ||
+        (tournament.registration_deadline && new Date(tournament.registration_deadline) <= new Date())) {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: 'Registration is closed for this tournament.' });
     }
@@ -58,35 +59,25 @@ async function createRegistration(req, res) {
        WHERE tournament_id = $1 AND status = 'CONFIRMED'`,
       [tournamentId]
     );
-    const squadCapacity = Math.min(Number(tournament.max_slots), 13);
+    const squadCapacity = Number(tournament.max_slots);
     if (occupiedSlotsRes.rows[0].count >= squadCapacity) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, error: 'All slots for this tournament are full.' });
+      return res.status(400).json({ success: false, error: 'All slots are filled.' });
     }
 
     // 2. Prevent parallel duplicate registrations by reserving against the locked tournament row.
     const existingRegistration = await client.query(
-      `SELECT r.id FROM registrations r
-       LEFT JOIN payments p
-         ON p.registration_id = r.id
-        AND p.provider = 'manual_upi'
-        AND p.status = 'UTR_SUBMITTED'
-       WHERE r.tournament_id = $1 AND r.captain_email = $2
-         AND (
-           r.status = 'CONFIRMED'
-           OR (r.status IN ('PENDING', 'OTP_VERIFIED', 'PAYMENT_PENDING', 'PAYMENT_PROCESSING', 'PAYMENT_FAILED')
-               AND r.reservation_expires_at > CURRENT_TIMESTAMP)
-           OR (r.status = 'REJECTED' AND r.reservation_expires_at > CURRENT_TIMESTAMP)
-           OR p.id IS NOT NULL
-         )`,
+      `SELECT id FROM registrations
+       WHERE tournament_id = $1 AND LOWER(captain_email) = LOWER($2)
+       LIMIT 1`,
       [tournamentId, captainEmail]
     );
 
     if (existingRegistration.rows.length > 0) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ 
-        success: false, 
-        error: 'A confirmed squad with this captain email already exists for this tournament.' 
+      return res.status(400).json({
+        success: false,
+        error: 'This captain already has a registration for this tournament. Continue with that registration instead.'
       });
     }
 
@@ -171,7 +162,6 @@ async function sendOtp(req, res) {
 
     return res.json({
       success: true,
-      devOtp: process.env.NODE_ENV !== 'production' ? otpResult.otp : undefined,
       message: `A fresh 6-digit OTP has been dispatched to ${reg.captain_email}.`,
     });
   } catch (error) {

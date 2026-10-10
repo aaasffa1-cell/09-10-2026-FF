@@ -50,7 +50,7 @@ export default function TournamentDetail() {
 
   const isOpen = tournament.status === 'OPEN';
   const isFull = tournament.status === 'SLOTS_FULL';
-  const isClosed = tournament.status === 'REGISTRATION_CLOSED';
+  const isCancelled = tournament.status === 'CANCELLED';
 
   return (
     <div style={{ padding: '40px 0 80px' }}>
@@ -99,6 +99,8 @@ export default function TournamentDetail() {
                   <span className="badge badge-open" style={{ padding: '6px 14px', fontSize: '12px' }}>REGISTER NOW</span>
                 ) : isFull ? (
                   <span className="badge badge-full" style={{ padding: '6px 14px', fontSize: '12px' }}>SLOTS FULL</span>
+                ) : isCancelled ? (
+                  <span className="badge badge-closed" style={{ padding: '6px 14px', fontSize: '12px' }}>CANCELLED</span>
                 ) : (
                   <span className="badge badge-closed" style={{ padding: '6px 14px', fontSize: '12px' }}>CLOSED</span>
                 )}
@@ -135,9 +137,17 @@ export default function TournamentDetail() {
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>Squad Format</div>
                   <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>
-                    4 Players Squad
+                    {tournament.squadSize} Players per squad
                   </div>
                 </div>
+                {tournament.map && <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>Map</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>{tournament.map}</div>
+                </div>}
+                {tournament.gameMode && <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>Game mode</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>{tournament.gameMode}</div>
+                </div>}
 
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '4px' }}>Entry Fee</div>
@@ -156,10 +166,14 @@ export default function TournamentDetail() {
               </div>
 
               <div style={{ color: '#d1d5db', fontSize: '14px', lineHeight: '1.8', whiteSpace: 'pre-line' }}>
-                {tournament.rules || (
-                  `1. Exactly 4 players per squad.\n2. Mobile devices only. Emulators, PC, and iPads are strictly prohibited.\n3. Gun attributes are disabled for balanced competitive gameplay.\n4. Character skills are allowed.\n5. Room ID and password will be sent to the captain verified email 10 minutes before the match.\n6. All squad members must join the designated room slot on time. Late entries forfeit their entry.\n7. Teaming up or toxic behavior will result in an immediate permanent ban and prize forfeiture.`
-                )}
+                {tournament.rules || 'Tournament rules have not been provided.'}
               </div>
+              {tournament.eligibilityRequirements && (
+                <div style={{ marginTop: 20 }}>
+                  <h4 style={{ marginBottom: 8 }}>Eligibility requirements</h4>
+                  <div style={{ color: 'var(--text-muted)', whiteSpace: 'pre-line' }}>{tournament.eligibilityRequirements}</div>
+                </div>
+              )}
             </div>
 
             {/* Room Credentials Delivery Notice */}
@@ -174,10 +188,10 @@ export default function TournamentDetail() {
               <MailCheck size={28} color="var(--accent-orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
               <div>
                 <h4 style={{ color: 'var(--accent-orange)', fontSize: '15px', marginBottom: '6px' }}>
-                  AUTOMATIC ROOM CREDENTIALS (10 MINS PRIOR)
+                  MATCH ROOM CREDENTIALS
                 </h4>
                 <p style={{ color: '#d1d5db', fontSize: '13px', lineHeight: '1.6' }}>
-                  Custom Room ID and Password are never displayed publicly to prevent room leakage. They will be automatically dispatched by our server directly to the captain's verified email address at <strong>10 minutes before {tournament.startTime}</strong>.
+                  Room ID and password are never displayed publicly. The administrator manually sends credentials to confirmed squad captains before the match.
                 </p>
               </div>
             </div>
@@ -207,7 +221,7 @@ export default function TournamentDetail() {
                   {tournament.confirmedSlots} / {tournament.maxSlots}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {tournament.availableSlots} Slots Available
+                  {tournament.availableSlots} available · {tournament.maxSlots} maximum
                 </div>
 
                 <div style={{
@@ -227,8 +241,12 @@ export default function TournamentDetail() {
 
               {/* Price Details */}
               <div style={{ borderBottom: '1px solid #202438', paddingBottom: '15px', marginBottom: '15px' }}>
+                {tournament.registrationDeadline && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Registration deadline</span>
+                  <strong style={{ color: '#ffffff' }}>{new Date(tournament.registrationDeadline).toLocaleString('en-IN')}</strong>
+                </div>}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Entry Fee (4 Players)</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Squad entry fee</span>
                   <strong style={{ color: '#ffffff' }}>₹{tournament.entryFee}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
@@ -260,7 +278,11 @@ export default function TournamentDetail() {
                 </Link>
               ) : isFull ? (
                 <button disabled className="btn btn-secondary btn-lg" style={{ width: '100%', opacity: 0.6 }}>
-                  SLOTS ARE FULL
+                  All slots are filled.
+                </button>
+              ) : isCancelled ? (
+                <button disabled className="btn btn-secondary btn-lg" style={{ width: '100%', opacity: 0.6 }}>
+                  TOURNAMENT CANCELLED
                 </button>
               ) : (
                 <button disabled className="btn btn-secondary btn-lg" style={{ width: '100%', opacity: 0.6 }}>

@@ -116,7 +116,7 @@ export default function Contact() {
                 When and how do I receive the Room ID and Password?
               </h4>
               <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.6' }}>
-                Our automated server dispatches the Custom Room ID and Password to the captain's verified email in the configured 10-minute pre-match window. Please check your Inbox and Spam/Promotions folder.
+                The administrator manually sends the Custom Room ID and Password to confirmed captains before the match. Please check your Inbox and Spam/Promotions folder.
               </p>
             </div>
 

@@ -18,6 +18,14 @@ import {
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
+function formatDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export default function AdminTournaments() {
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,11 +41,15 @@ export default function AdminTournaments() {
   const [description, setDescription] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('08:00 PM');
-  const [entryFee, setEntryFee] = useState(40);
-  const [prizeAmount, setPrizeAmount] = useState(300);
+  const [entryFee, setEntryFee] = useState('');
+  const [prizeAmount, setPrizeAmount] = useState('');
   const [squadSize, setSquadSize] = useState(4);
   const [maxSlots, setMaxSlots] = useState(13);
   const [rules, setRules] = useState('');
+  const [registrationDeadline, setRegistrationDeadline] = useState('');
+  const [map, setMap] = useState('');
+  const [gameMode, setGameMode] = useState('');
+  const [eligibilityRequirements, setEligibilityRequirements] = useState('');
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,11 +73,15 @@ export default function AdminTournaments() {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     setDate(tomorrow);
     setStartTime('08:00 PM');
-    setEntryFee(40);
-    setPrizeAmount(300);
+    setEntryFee('');
+    setPrizeAmount('');
     setSquadSize(4);
-    setMaxSlots(25);
-    setRules('1. Exactly 4 players per squad.\n2. Mobile devices only (No Emulators/iPads).\n3. Gun attributes disabled.\n4. Room ID & Password sent 10 minutes prior to match.');
+    setMaxSlots(13);
+    setRules('1. Four players per squad.\n2. Mobile devices only (No emulators/iPads).\n3. Gun attributes disabled.\n4. The administrator will send room credentials before the match.');
+    setRegistrationDeadline('');
+    setMap('');
+    setGameMode('');
+    setEligibilityRequirements('');
     setRegistrationOpen(true);
     setError(null);
     setModalOpen(true);
@@ -78,11 +94,15 @@ export default function AdminTournaments() {
     const formattedDate = new Date(t.date).toISOString().split('T')[0];
     setDate(formattedDate);
     setStartTime(t.startTime);
-    setEntryFee(40);
+    setEntryFee(t.entryFee);
     setPrizeAmount(t.prizeAmount);
     setSquadSize(t.squadSize);
     setMaxSlots(t.maxSlots);
     setRules(t.rules || '');
+    setRegistrationDeadline(formatDateTimeLocal(t.registrationDeadline));
+    setMap(t.map || '');
+    setGameMode(t.gameMode || '');
+    setEligibilityRequirements(t.eligibilityRequirements || '');
     setRegistrationOpen(t.registrationOpen);
     setError(null);
     setModalOpen(true);
@@ -105,6 +125,10 @@ export default function AdminTournaments() {
         squadSize: parseInt(squadSize, 10),
         maxSlots: parseInt(maxSlots, 10),
         rules: rules.trim(),
+        registrationDeadline: registrationDeadline ? new Date(registrationDeadline).toISOString() : null,
+        map: map.trim(),
+        gameMode: gameMode.trim(),
+        eligibilityRequirements: eligibilityRequirements.trim(),
         registrationOpen,
       };
 
@@ -162,7 +186,7 @@ export default function AdminTournaments() {
             <div className="badge badge-gold" style={{ marginBottom: '8px' }}>
               ADMINISTRATION
             </div>
-            <h1 style={{ fontSize: '28px', color: '#ffffff' }}>
+            <h1 style={{ fontSize: '28px', color: 'var(--text-main)' }}>
               TOURNAMENTS MANAGEMENT
             </h1>
           </div>
@@ -204,7 +228,7 @@ export default function AdminTournaments() {
           <div className="ffa-card" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
               <thead>
-                <tr style={{ background: '#0e1018', borderBottom: '1px solid var(--border-card)', color: 'var(--text-dim)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <tr style={{ background: 'var(--bg-card-hover)', borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                   <th style={{ padding: '16px 20px' }}>Tournament</th>
                   <th style={{ padding: '16px 15px' }}>Date & Time</th>
                   <th style={{ padding: '16px 15px' }}>Fee / Prize</th>
@@ -218,12 +242,12 @@ export default function AdminTournaments() {
                 {tournaments.map(t => (
                   <tr key={t.id} style={{ borderBottom: '1px solid #1a1d2e' }}>
                     <td style={{ padding: '16px 20px' }}>
-                      <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '15px' }}>{t.name}</div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '15px' }}>{t.name}</div>
                       <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>ID: #{t.id} • {t.squadSize} Players</div>
                     </td>
 
                     <td style={{ padding: '16px 15px', fontSize: '13px' }}>
-                      <div style={{ color: '#ffffff', fontWeight: 600 }}>
+                      <div style={{ color: 'var(--text-main)', fontWeight: 600 }}>
                         {new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                       </div>
                       <div style={{ color: 'var(--accent-orange)' }}>{t.startTime}</div>
@@ -235,7 +259,7 @@ export default function AdminTournaments() {
                     </td>
 
                     <td style={{ padding: '16px 15px' }}>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: t.confirmedSlots >= t.maxSlots ? 'var(--accent-gold)' : '#ffffff' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: t.confirmedSlots >= t.maxSlots ? 'var(--accent-gold)' : 'var(--text-main)' }}>
                         {t.confirmedSlots} / {t.maxSlots}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
@@ -313,7 +337,7 @@ export default function AdminTournaments() {
               padding: '30px',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #22263d', paddingBottom: '15px' }}>
-                <h2 style={{ fontSize: '20px', color: '#ffffff' }}>
+                <h2 style={{ fontSize: '20px', color: 'var(--text-main)' }}>
                   {editingTournament ? 'EDIT TOURNAMENT' : 'CREATE NEW TOURNAMENT'}
                 </h2>
                 <button
@@ -375,14 +399,18 @@ export default function AdminTournaments() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '15px' }}>
                   <div className="form-group">
-                    <label className="form-label">Team Entry Fee (Fixed at ₹40)</label>
+                    <label className="form-label">Squad Entry Fee (₹) *</label>
                     <input
                       type="number"
                       required
+                      min="0.01"
+                      step="0.01"
                       className="form-input"
-                      value={40}
-                      disabled
+                      value={entryFee}
+                      disabled={Boolean(editingTournament)}
+                      onChange={(e) => setEntryFee(e.target.value)}
                     />
+                    {editingTournament && <small>Published entry fees remain fixed; existing payment amounts are not changed.</small>}
                   </div>
 
                   <div className="form-group">
@@ -414,12 +442,41 @@ export default function AdminTournaments() {
                       type="number"
                       required
                       min={editingTournament ? editingTournament.confirmedSlots : 1}
-                      max="13"
+                      max="10000"
                       className="form-input"
                       value={maxSlots}
                       onChange={(e) => setMaxSlots(e.target.value)}
                     />
                   </div>
+                </div>
+
+                {editingTournament && Number(maxSlots) < Number(editingTournament.confirmedSlots) && (
+                  <div className="alert alert-error" role="alert">
+                    Capacity is below the {editingTournament.confirmedSlots} already confirmed squads. Existing confirmations will be preserved, but new registrations cannot open until capacity is increased.
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="registration-deadline">Registration deadline{!editingTournament && ' *'}</label>
+                  <input id="registration-deadline" type="datetime-local" required={!editingTournament} className="form-input"
+                    value={registrationDeadline} onChange={(e) => setRegistrationDeadline(e.target.value)} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="tournament-map">Map{!editingTournament && ' *'}</label>
+                    <input id="tournament-map" required={!editingTournament} className="form-input" maxLength={100}
+                      value={map} onChange={(e) => setMap(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="game-mode">Game mode{!editingTournament && ' *'}</label>
+                    <input id="game-mode" required={!editingTournament} className="form-input" maxLength={100}
+                      value={gameMode} onChange={(e) => setGameMode(e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="eligibility">Eligibility requirements{!editingTournament && ' *'}</label>
+                  <textarea id="eligibility" required={!editingTournament} rows={2} className="form-textarea"
+                    value={eligibilityRequirements} onChange={(e) => setEligibilityRequirements(e.target.value)} />
                 </div>
 
                 <div className="form-group">

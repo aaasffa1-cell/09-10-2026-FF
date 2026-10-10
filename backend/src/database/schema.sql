@@ -18,11 +18,16 @@ CREATE TABLE IF NOT EXISTS tournaments (
     description TEXT,
     date DATE NOT NULL,
     start_time VARCHAR(50) NOT NULL,
-    entry_fee NUMERIC(10, 2) NOT NULL DEFAULT 40.00,
-    prize_amount NUMERIC(10, 2) NOT NULL DEFAULT 300.00,
+    entry_fee NUMERIC(10, 2) NOT NULL,
+    prize_amount NUMERIC(10, 2) NOT NULL,
     squad_size INT NOT NULL DEFAULT 4,
-    max_slots INT NOT NULL DEFAULT 25,
+    max_slots INT NOT NULL DEFAULT 13,
     rules TEXT,
+    registration_deadline TIMESTAMP WITH TIME ZONE,
+    map VARCHAR(100),
+    game_mode VARCHAR(100),
+    eligibility_requirements TEXT,
+    tournament_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     registration_open BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -31,8 +36,6 @@ CREATE TABLE IF NOT EXISTS tournaments (
     CONSTRAINT chk_entry_fee CHECK (entry_fee >= 0),
     CONSTRAINT chk_prize_amount CHECK (prize_amount >= 0)
 );
-ALTER TABLE tournaments ALTER COLUMN prize_amount SET DEFAULT 300.00;
-
 -- 3. Registrations Table
 CREATE TABLE IF NOT EXISTS registrations (
     id SERIAL PRIMARY KEY,
@@ -106,7 +109,7 @@ CREATE TABLE IF NOT EXISTS payments (
     CONSTRAINT chk_payments_status CHECK (status IN ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'REFUNDED', 'CANCELLED', 'UTR_SUBMITTED', 'VERIFIED', 'REJECTED')),
     CONSTRAINT chk_payments_amount_positive CHECK (amount > 0),
     CONSTRAINT chk_payments_currency_inr CHECK (currency = 'INR'),
-    CONSTRAINT chk_manual_upi_amount CHECK (provider <> 'manual_upi' OR (amount = 40.00 AND currency = 'INR' AND payment_method = 'UPI_QR'))
+    CONSTRAINT chk_manual_upi_amount CHECK (provider <> 'manual_upi' OR (amount > 0 AND currency = 'INR' AND payment_method = 'UPI_QR'))
 );
 ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS tournament_id INT REFERENCES tournaments(id) ON DELETE RESTRICT,
@@ -173,3 +176,47 @@ CREATE INDEX IF NOT EXISTS idx_registrations_captain_email ON registrations(capt
 CREATE INDEX IF NOT EXISTS idx_players_free_fire_id ON players(free_fire_id);
 CREATE INDEX IF NOT EXISTS idx_otp_registration ON otp_verifications(registration_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(tournament_id, email_type, status);
+
+CREATE TABLE IF NOT EXISTS tournament_results (
+    id BIGSERIAL PRIMARY KEY,
+    tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,
+    registration_id INT NOT NULL REFERENCES registrations(id) ON DELETE RESTRICT,
+    placement INT NOT NULL CHECK (placement > 0),
+    prize_amount NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (prize_amount >= 0),
+    details TEXT NOT NULL DEFAULT '',
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PUBLISHED')),
+    published_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (tournament_id, registration_id)
+);
+
+CREATE TABLE IF NOT EXISTS tournament_result_history (
+    id BIGSERIAL PRIMARY KEY,
+    tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,
+    result_id BIGINT REFERENCES tournament_results(id) ON DELETE SET NULL,
+    admin_id INT REFERENCES admins(id) ON DELETE SET NULL,
+    action VARCHAR(30) NOT NULL,
+    result_snapshot JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    admin_id INT NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    admin_id INT REFERENCES admins(id) ON DELETE SET NULL,
+    action VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id BIGINT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_entity
+    ON admin_audit_logs(entity_type, entity_id, created_at DESC);

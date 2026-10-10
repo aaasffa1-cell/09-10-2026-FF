@@ -64,9 +64,10 @@ export default function AdminRoomCredentials() {
           setRoomPassword('');
         }
       })
-      .catch(() => {
+      .catch((err) => {
         setRoomId('');
         setRoomPassword('');
+        setError(err.message || 'Failed to load saved room credentials.');
       });
   }, [selectedTournamentId, tournaments]);
 
@@ -91,8 +92,11 @@ export default function AdminRoomCredentials() {
       const latest = await fetchRoomCredentials(selectedTournamentId);
       setSendWindow(latest.sendWindow || null);
       setDeliveries(latest.deliveries || []);
-      // Refresh tournament list to update status
-      fetchAdminTournaments().then(setTournaments).catch(() => {});
+      try {
+        setTournaments(await fetchAdminTournaments());
+      } catch (refreshError) {
+        setError(refreshError.message || 'Credentials were saved, but the tournament list could not be refreshed.');
+      }
     } catch (err) {
       setError(err.message || 'Failed to save room credentials.');
     } finally {
@@ -135,7 +139,7 @@ export default function AdminRoomCredentials() {
             ROOM CREDENTIALS MANAGEMENT
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            Enter Custom Room ID and Password. Only confirmed squads are eligible; delivery is restricted to the configured 10-minute pre-match window.
+            Enter the Custom Room ID and Password. Only payment-confirmed squads are eligible. An admin manually starts delivery at any time; sending about ten minutes before the match is recommended.
           </p>
         </div>
 
@@ -213,7 +217,7 @@ export default function AdminRoomCredentials() {
                 <Clock size={18} />
                 <div>
                   {sendWindow.allowed
-                    ? `Authorized send window is open. Target time: ${new Date(sendWindow.targetTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
+                    ? sendWindow.warning
                     : sendWindow.warning}
                 </div>
               </div>
@@ -267,12 +271,12 @@ export default function AdminRoomCredentials() {
               <button
                 type="button"
                 onClick={handleDispatchEmails}
-                disabled={dispatching || !roomId.trim() || !roomPassword.trim() || !sendWindow?.allowed}
+                disabled={dispatching || !roomId.trim() || !roomPassword.trim()}
                 className="btn btn-secondary btn-lg"
                 title="Manually trigger room emails to confirmed players"
               >
                 <Send size={18} />
-                {dispatching ? 'SENDING...' : 'SEND ROOM ID & PASSWORD'}
+                {dispatching ? 'SENDING...' : 'SEND MATCH CREDENTIALS'}
               </button>
             </div>
           </form>
@@ -323,14 +327,14 @@ Room password: ${roomPassword || '[not set]'}`}
           )}
         </div>
 
-        {/* Automatic Scheduler Information */}
+        {/* Manual delivery guidance */}
         <div className="ffa-card" style={{ padding: '25px', background: '#0e1018' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--accent-gold)', marginBottom: '10px' }}>
             <Clock size={20} />
-            <h3 style={{ fontSize: '16px' }}>AUTOMATED 10-MINUTE SCHEDULER ACTIVE</h3>
+            <h3 style={{ fontSize: '16px' }}>MANUAL CREDENTIAL DELIVERY</h3>
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: '1.6' }}>
-            The background cron scheduler runs every 60 seconds on the server. When any tournament reaches <strong>10 minutes before start time</strong>, room credentials will be dispatched automatically to all confirmed captains. All deliveries are logged in PostgreSQL to prevent duplicate messages across reboots.
+            Credentials are sent only when an admin selects <strong>SEND MATCH CREDENTIALS</strong>. Sending about ten minutes before the match is recommended. No automatic email is sent when the clock reaches that time.
           </p>
         </div>
       </div>

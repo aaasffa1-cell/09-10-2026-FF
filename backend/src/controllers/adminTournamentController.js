@@ -1,4 +1,4 @@
-const { query } = require('../database/db');
+const { getClient, query } = require('../database/db');
 
 // GET /api/admin/tournaments - Full list with stats
 async function getAdminTournaments(req, res) {
@@ -15,6 +15,11 @@ async function getAdminTournaments(req, res) {
         tournaments.squad_size,
         tournaments.max_slots,
         tournaments.rules,
+        tournaments.registration_deadline,
+        tournaments.map,
+        tournaments.game_mode,
+        tournaments.eligibility_requirements,
+        tournaments.tournament_status,
         tournaments.registration_open,
         tournaments.created_at,
         tournaments.updated_at,
@@ -47,12 +52,17 @@ async function getAdminTournaments(req, res) {
       entryFee: parseFloat(t.entry_fee),
       prizeAmount: parseFloat(t.prize_amount),
       squadSize: t.squad_size,
-      maxSlots: Math.min(Number(t.max_slots), 13),
+      maxSlots: Number(t.max_slots),
       confirmedSlots: parseInt(t.confirmed_slots || '0', 10),
       totalRegistrations: parseInt(t.total_registrations || '0', 10),
-      availableSlots: Math.max(0, Math.min(Number(t.max_slots), 13) - parseInt(t.confirmed_slots || '0', 10)),
+      availableSlots: Math.max(0, Number(t.max_slots) - parseInt(t.confirmed_slots || '0', 10)),
       rules: t.rules,
       registrationOpen: t.registration_open,
+      registrationDeadline: t.registration_deadline,
+      map: t.map,
+      gameMode: t.game_mode,
+      eligibilityRequirements: t.eligibility_requirements,
+      status: t.tournament_status,
       hasRoomCredentials: Boolean(t.room_id && t.room_password),
       roomId: t.room_id || null,
       roomPassword: t.room_password || null,
@@ -77,29 +87,49 @@ async function createTournament(req, res) {
     description,
     date,
     startTime,
-    prizeAmount = 300.00,
+    entryFee,
+    prizeAmount,
     squadSize = 4,
     maxSlots = 13,
     rules,
+    registrationDeadline,
+    map,
+    gameMode,
+    eligibilityRequirements,
     registrationOpen = true,
   } = req.body;
 
   try {
+    if (!Number.isFinite(Number(entryFee)) || Number(entryFee) <= 0) {
+      return res.status(400).json({ success: false, error: 'Enter an entry fee greater than zero.' });
+    }
+    if (!Number.isFinite(Number(prizeAmount)) || Number(prizeAmount) < 0) {
+      return res.status(400).json({ success: false, error: 'Enter a valid prize amount.' });
+    }
+    if (!Number.isSafeInteger(Number(maxSlots)) || Number(maxSlots) < 1) {
+      return res.status(400).json({ success: false, error: 'Enter a valid squad capacity.' });
+    }
     const result = await query(
-      `INSERT INTO tournaments (name, description, date, start_time, entry_fee, prize_amount, squad_size, max_slots, rules, registration_open)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO tournaments
+         (name, description, date, start_time, entry_fee, prize_amount, squad_size, max_slots, rules,
+          registration_open, registration_deadline, map, game_mode, eligibility_requirements)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         name.trim(),
         description ? description.trim() : '',
         date,
         startTime.trim(),
-        40.00,
-        parseFloat(prizeAmount) || 300.00,
+        Number(entryFee),
+        Number(prizeAmount),
         parseInt(squadSize, 10) || 4,
-        parseInt(maxSlots, 10) || 13,
+        Number(maxSlots),
         rules ? rules.trim() : '',
         registrationOpen === true || registrationOpen === 'true',
+        registrationDeadline || null,
+        map ? map.trim() : null,
+        gameMode ? gameMode.trim() : null,
+        eligibilityRequirements ? eligibilityRequirements.trim() : null,
       ]
     );
 
@@ -112,7 +142,7 @@ async function createTournament(req, res) {
     console.error('[AdminTournamentController] createTournament error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to create tournament. ' + error.message,
+      error: 'Failed to create tournament.',
     });
   }
 }
@@ -130,12 +160,12 @@ async function updateTournament(req, res) {
     squadSize,
     maxSlots,
     rules,
+    registrationDeadline,
+    map,
+    gameMode,
+    eligibilityRequirements,
     registrationOpen,
   } = req.body;
-
-  if (entryFee !== undefined && Number(entryFee) !== 40) {
-    return res.status(400).json({ success: false, error: 'The team registration fee is fixed at ₹40.' });
-  }
 
   try {
     // 1. Check existing tournament and confirmed squad count
@@ -160,10 +190,10 @@ async function updateTournament(req, res) {
     const confirmedCount = parseInt(current.confirmed_slots || '0', 10);
 
     // Rule: Maximum slots cannot be less than already confirmed squads
-    if (maxSlots !== undefined && parseInt(maxSlots, 10) < confirmedCount) {
-      return res.status(400).json({
+    if (entryFee !== undefined && Number(entryFee) !== Number(current.entry_fee)) {
+      return res.status(409).json({
         success: false,
-        error: `Cannot reduce maximum slots to ${maxSlots} because there are already ${confirmedCount} confirmed squads.`,
+        error: 'The published entry fee cannot be changed. Existing payment amounts are preserved.',
       });
     }
 
@@ -171,19 +201,26 @@ async function updateTournament(req, res) {
     const updatedDesc = description !== undefined ? description.trim() : current.description;
     const updatedDate = date !== undefined ? date : current.date;
     const updatedTime = startTime !== undefined ? startTime.trim() : current.start_time;
-    const updatedFee = 40.00;
+    const updatedFee = current.entry_fee;
     const updatedPrize = prizeAmount !== undefined ? parseFloat(prizeAmount) : current.prize_amount;
     const updatedSquadSize = squadSize !== undefined ? parseInt(squadSize, 10) : current.squad_size;
     const updatedMaxSlots = maxSlots !== undefined ? parseInt(maxSlots, 10) : current.max_slots;
     const updatedRules = rules !== undefined ? rules.trim() : current.rules;
     const updatedOpen = registrationOpen !== undefined ? (registrationOpen === true || registrationOpen === 'true') : current.registration_open;
+    const updatedDeadline = registrationDeadline !== undefined ? (registrationDeadline || null) : current.registration_deadline;
+    const updatedMap = map !== undefined ? map.trim() : current.map;
+    const updatedGameMode = gameMode !== undefined ? gameMode.trim() : current.game_mode;
+    const updatedEligibility = eligibilityRequirements !== undefined
+      ? eligibilityRequirements.trim()
+      : current.eligibility_requirements;
 
     const updateRes = await query(
       `UPDATE tournaments
        SET name = $1, description = $2, date = $3, start_time = $4, entry_fee = $5,
            prize_amount = $6, squad_size = $7, max_slots = $8, rules = $9, registration_open = $10,
+           registration_deadline = $11, map = $12, game_mode = $13, eligibility_requirements = $14,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $11
+       WHERE id = $15
        RETURNING *`,
       [
         updatedName,
@@ -196,6 +233,10 @@ async function updateTournament(req, res) {
         updatedMaxSlots,
         updatedRules,
         updatedOpen,
+        updatedDeadline,
+        updatedMap,
+        updatedGameMode,
+        updatedEligibility,
         id,
       ]
     );
@@ -203,13 +244,16 @@ async function updateTournament(req, res) {
     return res.json({
       success: true,
       message: 'Tournament updated successfully.',
+      capacityWarning: updatedMaxSlots < confirmedCount
+        ? `Capacity is now below the ${confirmedCount} already-confirmed squads. Existing confirmations are preserved and no new slots can be confirmed.`
+        : null,
       tournament: updateRes.rows[0],
     });
   } catch (error) {
     console.error('[AdminTournamentController] updateTournament error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to update tournament. ' + error.message,
+      error: 'Failed to update tournament.',
     });
   }
 }
@@ -219,40 +263,69 @@ async function deleteTournament(req, res) {
   const { id } = req.params;
 
   try {
-    const checkRes = await query(
-      `SELECT COUNT(id) as count FROM registrations WHERE tournament_id = $1 AND (status = 'CONFIRMED' OR payment_status = 'PAID')`,
-      [id]
-    );
-
-    const paidCount = parseInt(checkRes.rows[0].count || '0', 10);
-    if (paidCount > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Cannot delete tournament with ${paidCount} confirmed/paid registrations. You can close registration instead.`,
-      });
+    const client = await getClient();
+    let affectedHistory = false;
+    try {
+      await client.query('BEGIN');
+      const tournament = await client.query(
+        `SELECT id, name, tournament_status, registration_open
+         FROM tournaments WHERE id = $1 FOR UPDATE`,
+        [id]
+      );
+      if (!tournament.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Tournament not found.' });
+      }
+      const history = await client.query(
+        `SELECT
+           EXISTS (SELECT 1 FROM registrations WHERE tournament_id = $1) AS has_registrations,
+           EXISTS (SELECT 1 FROM payments WHERE tournament_id = $1) AS has_payments,
+           EXISTS (SELECT 1 FROM room_credentials WHERE tournament_id = $1) AS has_room_credentials,
+           EXISTS (SELECT 1 FROM tournament_results WHERE tournament_id = $1) AS has_results`,
+        [id]
+      );
+      affectedHistory = Object.values(history.rows[0]).some(Boolean);
+      if (affectedHistory) {
+        await client.query(
+          `UPDATE tournaments SET registration_open = FALSE, tournament_status = 'CANCELLED',
+             updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [id]
+        );
+        await client.query(
+          `INSERT INTO admin_audit_logs (admin_id, action, entity_type, entity_id, metadata)
+           VALUES ($1, 'TOURNAMENT_CANCELLED', 'TOURNAMENT', $2, $3::jsonb)`,
+          [
+            req.admin.id,
+            id,
+            JSON.stringify({
+              name: tournament.rows[0].name,
+              previousStatus: tournament.rows[0].tournament_status,
+              registrationWasOpen: tournament.rows[0].registration_open,
+            }),
+          ]
+        );
+      } else {
+        await client.query(`DELETE FROM tournaments WHERE id = $1`, [id]);
+        await client.query(
+          `INSERT INTO admin_audit_logs (admin_id, action, entity_type, entity_id, metadata)
+           VALUES ($1, 'TOURNAMENT_DELETED', 'TOURNAMENT', $2, $3::jsonb)`,
+          [req.admin.id, id, JSON.stringify({ name: tournament.rows[0].name })]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const paymentHistoryRes = await query(
-      `SELECT COUNT(p.id) AS count
-       FROM payments p
-       JOIN registrations r ON r.id = p.registration_id
-       WHERE r.tournament_id = $1`,
-      [id]
-    );
-    if (parseInt(paymentHistoryRes.rows[0].count || '0', 10) > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cannot delete a tournament with payment history. Close registration instead to preserve the audit trail.',
-      });
-    }
-
-    // Delete pending/draft registrations
-    await query(`DELETE FROM registrations WHERE tournament_id = $1`, [id]);
-    await query(`DELETE FROM tournaments WHERE id = $1`, [id]);
 
     return res.json({
       success: true,
-      message: 'Tournament deleted successfully.',
+      message: affectedHistory
+        ? 'Tournament cancelled. Registration, payment, and match history have been preserved.'
+        : 'Tournament deleted successfully.',
+      cancelled: affectedHistory,
     });
   } catch (error) {
     console.error('[AdminTournamentController] deleteTournament error:', error);

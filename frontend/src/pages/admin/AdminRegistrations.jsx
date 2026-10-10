@@ -70,7 +70,9 @@ export default function AdminRegistrations() {
   }, [paymentFilter, paymentSearch, paymentSort]);
 
   useEffect(() => {
-    fetchAdminTournaments().then(setTournaments).catch(() => {});
+    fetchAdminTournaments()
+      .then(setTournaments)
+      .catch((err) => setPaymentActionError(err.message || 'Failed to load tournaments.'));
     loadRegistrations();
   }, [loadRegistrations]);
 
@@ -405,7 +407,7 @@ export default function AdminRegistrations() {
                           <span className="badge badge-closed">{r.status}</span>
                         )}
                         {isPaid ? (
-                          <span className="badge badge-gold">₹{r.entry_fee || '40'} PAID</span>
+                          <span className="badge badge-gold">₹{r.entry_fee ?? '—'} PAID</span>
                         ) : (
                           <span className="badge badge-closed">PAYMENT {r.payment_status}</span>
                         )}
